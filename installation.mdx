@@ -1,0 +1,395 @@
+---
+title: Installation
+description: Complete setup guide for the Bet365 Scraper SDK including dependencies, configuration, and verification
+---
+
+## System Requirements
+
+<Note>
+  **Python Version**: Python 3.8 or higher is required for full compatibility with type hints and async features.
+</Note>
+
+Verify your Python version:
+
+```bash
+python3 --version
+```
+
+Expected output: `Python 3.8.x` or higher
+
+## Installation Methods
+
+### Method 1: Using requirements.txt (Recommended)
+
+The SDK requires three core dependencies defined in `requirements.txt`:
+
+```text
+curl_cffi
+tls_client
+prettytable
+```
+
+Install all dependencies with:
+
+```bash
+pip3 install -r requirements.txt
+```
+
+### Method 2: Manual Installation
+
+Install each dependency individually:
+
+<CodeGroup>
+
+```bash pip
+pip3 install curl_cffi tls_client prettytable
+```
+
+```bash pip (with upgrade)
+pip3 install --upgrade curl_cffi tls_client prettytable
+```
+
+```bash poetry
+poetry add curl_cffi tls_client prettytable
+```
+
+```bash conda
+conda install -c conda-forge curl_cffi
+pip3 install tls_client prettytable
+```
+
+</CodeGroup>
+
+## Core Dependencies Explained
+
+### curl_cffi
+
+**Purpose**: Low-level HTTP client with TLS fingerprinting capabilities
+
+`curl_cffi` is the backbone of the SDK, providing:
+- Custom JA3 fingerprint configuration
+- Android WebView TLS signature emulation
+- Fine-grained control over HTTP/2 headers
+
+<Note>
+  This library may take longer to initialize on first use due to native library loading.
+</Note>
+
+### tls_client
+
+**Purpose**: Secondary TLS client for API communication
+
+Used specifically for:
+- Communicating with the X-Net header generation API
+- Sending device ID, SST tokens, and URL signatures
+- Maintaining separate session for anti-bot token requests
+
+### prettytable
+
+**Purpose**: Console output formatting for scraped data
+
+Provides:
+- Formatted table display of match data
+- Easy visualization of odds and markets during development
+- Debug output for parsed data structures
+
+## Configuration Setup
+
+### Create Configuration File
+
+Create a `config.json` file in your project root:
+
+```json
+{
+  "api_url": "https://vercel-android-server-three.vercel.app/get_x_net_android",
+  "api_key": "",
+  "proxy": "",
+  "email": "",
+  "password": ""
+}
+```
+
+### Configuration Parameters
+
+<Steps>
+  <Step title="API URL">
+    The endpoint for X-Net-Sync-Term-Android header generation.
+
+    **Default value**:
+    ```
+    https://vercel-android-server-three.vercel.app/get_x_net_android
+    ```
+
+    <Warning>
+      This is a required service that generates anti-bot protection headers. Contact the developer via [Discord](https://discord.gg/u56FypRKKc) if you need a custom endpoint.
+    </Warning>
+  </Step>
+
+  <Step title="API Key">
+    Your authentication key for the header generation service.
+
+    **How to obtain**:
+    - Contact the developer on Discord
+    - Request API access for your use case
+    - Receive your unique API key
+
+    **Example**:
+    ```json
+    "api_key": "sk_live_abc123def456ghi789"
+    ```
+
+    <Warning>
+      Never commit your API key to version control. Use environment variables or secret management systems in production.
+    </Warning>
+  </Step>
+
+  <Step title="Proxy Configuration (Optional)">
+    A residential or datacenter proxy to enhance reliability and avoid IP blocks.
+
+    **Supported formats**:
+    ```json
+    "proxy": "http://proxy.example.com:8080"
+    "proxy": "http://username:password@proxy.example.com:8080"
+    "proxy": "socks5://proxy.example.com:1080"
+    ```
+
+    <Note>
+      **Recommended**: Residential proxies from providers like BrightData, Smartproxy, or Oxylabs work best for avoiding Cloudflare detection.
+    </Note>
+
+    Leave empty if not using a proxy:
+    ```json
+    "proxy": ""
+    ```
+  </Step>
+
+  <Step title="Email & Password (Reserved)">
+    These fields are reserved for future authentication features and are currently unused.
+
+    ```json
+    "email": "",
+    "password": ""
+    ```
+
+    You can safely leave them empty or omit them.
+  </Step>
+</Steps>
+
+## Environment Variables (Alternative)
+
+For production deployments, use environment variables instead of `config.json`:
+
+```python
+import os
+from bet365 import Bet365AndroidSession
+
+session = Bet365AndroidSession(
+    api_url=os.getenv("BET365_API_URL"),
+    api_key=os.getenv("BET365_API_KEY"),
+    proxy=os.getenv("BET365_PROXY", None),
+    host="www.bet365.com",
+)
+```
+
+Set environment variables:
+
+<CodeGroup>
+
+```bash Linux/Mac
+export BET365_API_URL="https://your-api-endpoint.com/get_x_net_android"
+export BET365_API_KEY="your_api_key_here"
+export BET365_PROXY="http://proxy:port"
+```
+
+```powershell Windows
+$env:BET365_API_URL="https://your-api-endpoint.com/get_x_net_android"
+$env:BET365_API_KEY="your_api_key_here"
+$env:BET365_PROXY="http://proxy:port"
+```
+
+```bash Docker
+docker run -e BET365_API_URL="..." -e BET365_API_KEY="..." your-image
+```
+
+</CodeGroup>
+
+## Verification Steps
+
+### Step 1: Verify Installation
+
+Test that all dependencies are correctly installed:
+
+```python
+import curl_cffi
+import tls_client
+import prettytable
+from bet365 import Bet365AndroidSession
+
+print("✓ All dependencies imported successfully")
+print(f"✓ curl_cffi version: {curl_cffi.__version__}")
+print(f"✓ Bet365AndroidSession available: {Bet365AndroidSession is not None}")
+```
+
+### Step 2: Test Configuration Loading
+
+Verify your `config.json` is correctly formatted:
+
+```python
+import json
+
+with open("config.json", encoding="utf8") as fp:
+    config = json.load(fp)
+
+required_keys = ["api_url", "api_key"]
+for key in required_keys:
+    assert key in config and config[key], f"Missing required config: {key}"
+
+print("✓ Configuration loaded successfully")
+print(f"✓ API URL: {config['api_url']}")
+print(f"✓ API Key: {'*' * len(config['api_key'])} (hidden)")
+print(f"✓ Proxy: {config.get('proxy') or 'Not configured'}")
+```
+
+### Step 3: Test API Connection
+
+Verify your API key works:
+
+```python
+import json
+from bet365 import Bet365AndroidSession
+
+with open("config.json", encoding="utf8") as fp:
+    config = json.load(fp)
+
+try:
+    session = Bet365AndroidSession(
+        config["api_url"],
+        config["api_key"],
+        proxy=config["proxy"] or None,
+        host="www.bet365.com",
+    )
+    print("✓ Session initialized successfully")
+    print(f"✓ Device ID: {session.device_id}")
+    print(f"✓ Host: {session.host}")
+except Exception as e:
+    print(f"✗ Error: {e}")
+```
+
+### Step 4: Full Integration Test
+
+Run the complete workflow to verify everything works:
+
+```bash
+python3 main.py
+```
+
+Expected output:
+```
+Fetching soccer page using android api
+Going to homepage started taking longer than it should because of curl_cffi.
+False
+Sport: Soccer, PD: #AS#B1#...
+...
+```
+
+<Note>
+  If you see match data printed in tables, your installation is successful!
+</Note>
+
+## Troubleshooting
+
+### Common Installation Issues
+
+<Warning>
+  **curl_cffi installation fails on Windows**:
+  
+  This library requires C++ build tools. Install [Visual C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) or use WSL (Windows Subsystem for Linux).
+</Warning>
+
+**Error**: `ModuleNotFoundError: No module named 'curl_cffi'`
+
+**Solution**:
+```bash
+pip3 install --upgrade pip setuptools wheel
+pip3 install curl_cffi --no-cache-dir
+```
+
+**Error**: `AssertionError: An error occured while generating token`
+
+**Solution**: Invalid API key or API service is down
+- Verify your `api_key` in `config.json`
+- Check API URL is correct
+- Contact support if issue persists
+
+**Error**: `403 Forbidden` during homepage navigation
+
+**Solution**: IP address blocked by Cloudflare
+- Configure a residential proxy in `config.json`
+- Try from a different network
+- Headers may need updating (contact support)
+
+### Proxy Testing
+
+Test if your proxy works:
+
+```python
+import requests
+
+proxy = "http://user:pass@proxy.example.com:8080"
+try:
+    response = requests.get(
+        "https://api.ipify.org?format=json",
+        proxies={"http": proxy, "https": proxy},
+        timeout=10
+    )
+    print(f"✓ Proxy working. IP: {response.json()['ip']}")
+except Exception as e:
+    print(f"✗ Proxy error: {e}")
+```
+
+## Project Structure
+
+After installation, your project should look like:
+
+```
+project/
+├── bet365/
+│   ├── __init__.py
+│   ├── android.py
+│   ├── message_parser.py
+│   ├── sdk.py
+│   └── live.py (optional)
+├── config.json
+├── main.py
+├── requirements.txt
+└── response.txt (generated after first run)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Run your first scraper in 5 minutes
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/concepts/anti-bot-protection">
+    Learn about anti-bot protection and TLS fingerprinting
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/bet365-android-session">
+    Complete API documentation for Bet365AndroidSession
+  </Card>
+  
+  <Card title="Examples" icon="lightbulb" href="/examples/fetching-sports">
+    Explore practical examples and code snippets
+  </Card>
+</CardGroup>
+
+## Getting Help
+
+If you encounter issues during installation:
+
+- Join the [Discord community](https://discord.gg/u56FypRKKc) for support
+- Check that your Python version is 3.8+
+- Ensure you have a valid API key
+- Try using a proxy if experiencing 403 errors

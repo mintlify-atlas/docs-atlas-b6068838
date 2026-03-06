@@ -1,0 +1,329 @@
+---
+title: 'Parsing Responses'
+description: 'Learn how to parse and extract data from Bet365 API responses'
+---
+
+Bet365 uses a custom message format for API responses. This guide shows you how to parse these responses and extract meaningful data using the SDK's built-in parsing utilities.
+
+## Understanding the Response Format
+
+Bet365 responses use a pipe-delimited (`|`) and backspace-separated (`\b`) format with structured sections. Each section has:
+- A **type** (e.g., `CL`, `MG`, `PA`, `MA`)
+- **Properties** in `key=value` format separated by semicolons
+
+Example raw response:
+```
+CL;NA=Soccer;PD=#AL#B1#|PA;OD=1.50;ID=123|PA;OD=2.30;ID=124...
+```
+
+## Core Parsing Functions
+
+### get_parsers()
+
+Convert raw response text into parser objects:
+
+```python
+from bet365.message_parser import get_parsers
+
+# Get response from API
+response = session.protected_get(url, params={...})
+
+# Create parsers from response
+parsers = get_parsers(response.text)
+
+# Iterate through each parser
+for parser in parsers:
+    # Work with individual message segments
+    process_parser(parser)
+```
+
+<Note>
+  `get_parsers()` splits the response into multiple parser instances, each representing a logical message segment.
+</Note>
+
+### find_sections()
+
+Search for specific section types with optional filters:
+
+```python
+# Basic usage - find all CL (classification) sections
+for idx, section in parser.find_sections("CL"):
+    print(section.get_property("NA"))  # Get name property
+
+# With property filters
+for idx, section in parser.find_sections(
+    "CL",
+    NA="Soccer",  # Filter by name
+    include_part_index=True
+):
+    print(f"Found at index {idx}: {section.get_property('PD')}")
+
+# With custom filter functions
+def not_null(key, value):
+    return value is not None
+
+for idx, section in parser.find_sections(
+    "CL",
+    PD=not_null,  # PD must not be null
+    NA=not_null,  # NA must not be null
+    include_part_index=True
+):
+    sport_name = section.get_property("NA")
+    path_descriptor = section.get_property("PD")
+    print(f"{sport_name}: {path_descriptor}")
+```
+
+<Tip>
+  Set `include_part_index=True` to get both the index and the section object. This is useful for reading tables.
+</Tip>
+
+### read_table()
+
+Extract structured table data from match groups:
+
+```python
+from bet365.message_parser import read_table, get_parsers
+
+# Find match group sections
+for idx, section in parser.find_sections("MG", include_part_index=True):
+    # Read the table starting at this index
+    table = read_table(parser, idx)
+    
+    # Table structure:
+    # {
+    #   "title": "Match Title",
+    #   "data": [
+    #     {"name": "Team/Option", "values": [...], "extra": {...}},
+    #     ...
+    #   ]
+    # }
+    
+    print(f"Table: {table['title']}")
+    for row in table['data']:
+        print(f"  {row['name']}: {len(row['values'])} odds")
+```
+
+## Working with Parsed Data
+
+### Extracting Sports List
+
+Complete example from the SDK:
+
+```python
+from bet365.message_parser import get_parsers
+
+response = session.protected_get(
+    f"https://{session.host}/leftnavcontentapi/allsportsmenu",
+    params={
+        "lid": "30",
+        "zid": "0",
+        "pd": "#AL#B1#R^1#",
+        "cid": "13",
+        "cgid": "2",
+        "ctid": "13",
+        "tzo": "660",
+    },
+    headers={
+        "User-Agent": "Mozilla (Linux; Android 12 Phone; ...) bet365/8.0.36.00",
+        "X-b365App-ID": "8.0.36.00-row",
+    }
+)
+
+sports = []
+for parser in get_parsers(response.text):
+    for idx, cl in parser.find_sections(
+        "CL",
+        PD=lambda k, v: v is not None,
+        NA=lambda k, v: v is not None,
+        include_part_index=True
+    ):
+        pd = cl.get_property("PD", "")
+        # Clean up PD value
+        if pd.endswith("K^5#"):
+            pd = pd[:-len("K^5#")]
+        
+        sports.append({
+            "name": cl.get_property("NA"),
+            "pd": pd
+        })
+
+print(f"Found {len(sports)} sports")
+```
+
+### Extracting Match Data and Odds
+
+<Steps>
+  <Step title="Find Content Sections">
+    Locate the content sections containing match data:
+
+    ```python
+    for idx, section in parser.find_sections(
+        "CL",
+        PV=lambda k, v: v.startswith("podcontentcontentapi"),
+        include_part_index=True
+    ):
+        # Found a content pod
+        process_content_pod(parser, idx)
+    ```
+  </Step>
+
+  <Step title="Find Match Groups">
+    Within each content section, find match groups:
+
+    ```python
+    for idx, section in parser.find_sections("MG", include_part_index=True):
+        # Read the match table
+        table = read_table(parser, idx)
+    ```
+  </Step>
+
+  <Step title="Process Table Data">
+    Extract and format the odds data:
+
+    ```python
+    from bet365.message_parser import fix_data, pretty_print_table
+    
+    # Pretty print to console
+    pretty_print_table(table)
+    
+    # Get structured data
+    formatted_data = fix_data(table)
+    
+    # formatted_data structure:
+    # [
+    #   {
+    #     "FD": "Match/Event description",
+    #     "ODS": ["1.50", "2.30", "3.10"],
+    #     "ODS_IDS": ["123", "124", "125"],
+    #     "other_properties": {...}
+    #   },
+    #   ...
+    # ]
+    ```
+  </Step>
+</Steps>
+
+## Utility Functions
+
+### pretty_print_table()
+
+Display table data in a formatted console output:
+
+```python
+from bet365.message_parser import pretty_print_table, read_table
+
+for idx, section in parser.find_sections("MG", include_part_index=True):
+    table = read_table(parser, idx)
+    
+    # Print formatted table to console
+    pretty_print_table(table)
+    
+    # Output example:
+    # +------------------------+-------+-------+-------+
+    # | Match                  | 1     | X     | 2     |
+    # +------------------------+-------+-------+-------+
+    # | Team A vs Team B       | 1.50  | 3.20  | 6.50  |
+    # | Team C vs Team D       | 2.10  | 3.10  | 3.40  |
+    # +------------------------+-------+-------+-------+
+```
+
+### fix_data()
+
+Transform table data into a structured format with parsed odds:
+
+```python
+from bet365.message_parser import fix_data
+
+table = read_table(parser, idx)
+formatted = fix_data(table)
+
+for match in formatted:
+    print(f"Match: {match['FD']}")
+    print(f"Odds: {match['ODS']}")
+    print(f"Odds IDs: {match['ODS_IDS']}")
+    print(f"Properties: {match['other_properties']}")
+```
+
+## Complete Parsing Example
+
+<CodeGroup>
+```python Sports Homepage
+from bet365.message_parser import get_parsers, read_table, pretty_print_table, fix_data
+
+# Fetch sport homepage
+response = session.get_sport_homepage(soccer)
+
+# Parse the response
+match_tables = []
+for parser in get_parsers(response.text):
+    # Find content pods
+    for _, _ in parser.find_sections(
+        "CL",
+        PV=lambda k, v: v.startswith("podcontentcontentapi"),
+        include_part_index=True
+    ):
+        # Find match groups within the pod
+        for idx, _ in parser.find_sections("MG", include_part_index=True):
+            # Read and process the table
+            table = read_table(parser, idx)
+            pretty_print_table(table)
+            match_tables.append(fix_data(table))
+
+print(f"Extracted {len(match_tables)} match tables")
+```
+
+```python Custom Property Access
+# Access section properties
+section = parser.find_sections("CL", include_part_index=True)[0][1]
+
+# Get property with default
+name = section.get_property("NA", "Unknown")
+
+# Check if property exists
+if section.has_property("PD"):
+    pd = section.get_property("PD")
+    print(f"Path descriptor: {pd}")
+
+# Access all properties
+for key, value in section.properties.items():
+    print(f"{key}: {value}")
+```
+
+```python Reading Odds Values
+from bet365.utils import parse_odds
+
+table = read_table(parser, idx)
+
+for row in table['data']:
+    for value in row['values']:
+        # Raw odds value
+        raw_odd = value['properties'].get('OD', '')
+        
+        # Parse to decimal
+        decimal_odd = parse_odds(raw_odd)
+        
+        # Format for display
+        print(f"{decimal_odd:0.2f}")
+```
+</CodeGroup>
+
+## Section Types Reference
+
+| Type | Description | Common Properties |
+|------|-------------|------------------|
+| `CL` | Classification/Category | `NA` (name), `PD` (path descriptor) |
+| `MG` | Match Group | `NA` (title) |
+| `MA` | Market | `NA` (market name) |
+| `PA` | Participant/Odds | `OD` (odds), `ID` (bet ID), `FD` (description) |
+| `CO` | Competitor | `NA` (name) |
+| `F` | Delimiter | - |
+
+<Warning>
+  The response format may vary depending on the endpoint. Always inspect the actual response structure during development.
+</Warning>
+
+## Next Steps
+
+- Implement [error handling](/examples/error-handling) for parsing failures
+- Learn about [fetching sports data](/examples/fetching-sports)
+- Explore the [Parser API Reference](/api/message-parser)

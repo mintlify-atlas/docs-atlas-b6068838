@@ -1,0 +1,391 @@
+---
+title: TLS Fingerprinting
+description: Understanding how the SDK uses TLS fingerprinting to mimic the Bet365 Android app and bypass detection
+---
+
+TLS (Transport Layer Security) fingerprinting is a sophisticated technique used by websites to identify and potentially block automated clients. The Bet365 Scraper SDK implements precise TLS fingerprinting to mimic the official Bet365 Android app.
+
+## What is TLS Fingerprinting?
+
+TLS fingerprinting analyzes the characteristics of a TLS handshake to identify the client making the request. Modern anti-bot systems use this technique to distinguish between:
+
+- **Legitimate browsers and apps**: Chrome, Firefox, mobile apps
+- **Automated tools**: cURL, Python requests, Selenium
+- **Bot frameworks**: Scrapy, Puppeteer with default settings
+
+Even if headers like User-Agent are spoofed, the TLS handshake reveals the true client identity.
+
+<Warning>
+Standard Python libraries like `requests` or `urllib` have distinct TLS fingerprints that are immediately recognizable. Using them directly will result in detection and blocking.
+</Warning>
+
+## TLS Fingerprint Configuration
+
+The SDK uses a precisely configured TLS fingerprint that matches the Bet365 Android app:
+
+```python
+TLS_FINGERPRINT = {
+    "ja3": "771,4865-4866-4867-49195-49196-52393-49199-49200-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-51-45-43-21,29-23-24,0",
+    "akamai": "4:16777216|16711681|0|m,p,a,s",
+    "extra_fp": {
+        "tls_signature_algorithms": [
+            "ecdsa_secp256r1_sha256",
+            "rsa_pss_rsae_sha256",
+            "rsa_pkcs1_sha256",
+            "ecdsa_secp384r1_sha384",
+            "rsa_pss_rsae_sha384",
+            "rsa_pkcs1_sha384",
+            "rsa_pss_rsae_sha512",
+            "rsa_pkcs1_sha512",
+            "rsa_pkcs1_sha1",
+        ]
+    },
+}
+```
+
+### JA3 Fingerprint
+
+**JA3 String**: `771,4865-4866-4867-49195-49196-52393-49199-49200-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-51-45-43-21,29-23-24,0`
+
+The JA3 fingerprint is composed of five components:
+
+1. **TLS Version** (771): TLS 1.2 (0x0303)
+2. **Cipher Suites**: Ordered list of supported encryption algorithms
+   - `4865`: TLS_AES_128_GCM_SHA256
+   - `4866`: TLS_AES_256_GCM_SHA384
+   - `4867`: TLS_CHACHA20_POLY1305_SHA256
+   - `49195-49196`: ECDHE-ECDSA ciphers
+   - `52393`: TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+3. **Extensions**: TLS extensions in order (0-23-65281-10-11-35-16-5-13-51-45-43-21)
+4. **Elliptic Curves**: Supported curves (29-23-24)
+5. **Elliptic Curve Point Formats**: (0)
+
+<Info>
+The JA3 fingerprint precisely matches the Android WebView used by the Bet365 app. Any deviation will be detected.
+</Info>
+
+### Akamai Fingerprint
+
+**Akamai String**: `4:16777216|16711681|0|m,p,a,s`
+
+Akamai fingerprinting extends JA3 with additional HTTP/2 characteristics:
+
+- **4**: HTTP/2 settings count
+- **16777216**: SETTINGS_HEADER_TABLE_SIZE (65536)
+- **16711681**: SETTINGS_MAX_CONCURRENT_STREAMS (1000)
+- **0**: SETTINGS_INITIAL_WINDOW_SIZE
+- **m,p,a,s**: Priority and stream information
+
+### TLS Signature Algorithms
+
+The `extra_fp` configuration specifies the exact order of signature algorithms:
+
+```python
+"tls_signature_algorithms": [
+    "ecdsa_secp256r1_sha256",
+    "rsa_pss_rsae_sha256",
+    "rsa_pkcs1_sha256",
+    "ecdsa_secp384r1_sha384",
+    "rsa_pss_rsae_sha384",
+    "rsa_pkcs1_sha384",
+    "rsa_pss_rsae_sha512",
+    "rsa_pkcs1_sha512",
+    "rsa_pkcs1_sha1",
+]
+```
+
+This ordering is critical - it matches the Android app's OpenSSL configuration.
+
+<Note>
+The signature algorithm order reflects security preferences and implementation details of the Android platform.
+</Note>
+
+## Implementation with curl_cffi
+
+The SDK uses `curl_cffi` for making HTTP requests with custom TLS fingerprints:
+
+```python
+from curl_cffi.requests import Session, get
+
+class Bet365AndroidSession:
+    def __init__(self, api_url: str, api_key: str, *args, **kwargs):
+        kwargs.update(TLS_FINGERPRINT)
+        self.session = Session(*args, **kwargs)
+```
+
+**Why curl_cffi?**
+
+- **Native cURL binding**: Uses libcurl with full control over TLS
+- **Custom fingerprints**: Supports JA3, Akamai, and signature algorithm configuration
+- **HTTP/2 support**: Matches modern app behavior
+- **Performance**: Faster than browser automation
+
+### Request Execution
+
+```python
+def protected_get(self, url: str, headers: dict = None, *args, **kwargs):
+    headers = headers or {}
+    cookie_header = build_cookies(self.session.cookies)
+    headers["Cookie"] = cookie_header
+    kwargs["default_headers"] = False
+    kwargs.update(TLS_FINGERPRINT)  # Apply TLS fingerprint
+    
+    response = get(url, headers=headers, *args, **kwargs)
+    return response
+```
+
+The TLS fingerprint is applied to every request through `kwargs.update(TLS_FINGERPRINT)`.
+
+## Alternative: tls_client Library
+
+For generating the X-Net-Sync-Term-Android header, the SDK uses `tls_client`:
+
+```python
+from tls_client import Session as BogdanSession
+
+def get_x_net_header(self, url: str, cookie_header: str, post_data: bytes) -> str:
+    response = BogdanSession().post(
+        self.api_url,
+        headers={"x-net-api-key": self.api_key},
+        json={...},
+    )
+    return response.text
+```
+
+**tls_client vs curl_cffi:**
+
+| Feature | curl_cffi | tls_client |
+|---------|-----------|------------|
+| TLS Fingerprinting | ✅ Full control | ✅ Full control |
+| HTTP/2 Support | ✅ Native | ✅ Native |
+| Performance | ⚡ Very fast | ⚡ Fast |
+| Ease of use | 📝 Simple API | 📝 Simple API |
+| Use case | Main scraping | API token generation |
+
+<Tip>
+Both libraries provide excellent TLS fingerprinting capabilities. The SDK uses curl_cffi for main requests and tls_client for auxiliary API calls.
+</Tip>
+
+## How It Mimics Android App Behavior
+
+The SDK replicates multiple layers of the Android app's network behavior:
+
+### 1. TLS Layer
+```python
+# TLS 1.2/1.3 with specific cipher ordering
+TLS_FINGERPRINT["ja3"]
+```
+
+### 2. HTTP/2 Layer
+```python
+# HTTP/2 settings and priorities
+TLS_FINGERPRINT["akamai"]
+```
+
+### 3. Application Layer
+```python
+headers={
+    "User-Agent": "Mozilla (Linux; Android 12 Phone; CPU M2003J15SC OS 12 like Gecko) Chrome/144.0.7559.59 Gen6 bet365/8.0.36.00",
+    "X-b365App-ID": "8.0.36.00-row",
+    "x-requested-with": "com.bet365Wrapper.Bet365_Application",
+}
+```
+
+### 4. WebView Headers
+```python
+headers={
+    "sec-ch-ua": '"Android WebView";v="144", "Not?A_Brand";v="8", "Chromium";v="144"',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"',
+}
+```
+
+## Session Configuration
+
+The session is configured with TLS fingerprinting and proxy support:
+
+```python
+def __init__(self, api_url: str, api_key: str, *args, proxy: Optional[str] = None, **kwargs):
+    kwargs.update(TLS_FINGERPRINT)  # Apply TLS fingerprint
+    self.session = Session(*args, **kwargs)
+    self.session.proxies = {}
+    if proxy:
+        self.session.proxies["https"] = proxy
+    self.session.verify = False  # SSL verification
+```
+
+<Warning>
+Setting `verify=False` disables SSL certificate verification. This is necessary when using certain proxies but reduces security. Only use in controlled environments.
+</Warning>
+
+## Verification and Testing
+
+You can verify your TLS fingerprint using online tools:
+
+1. **JA3 Fingerprint Testing**:
+   - Visit: `https://ja3er.com/json`
+   - Compare the JA3 hash with the Android app
+
+2. **TLS Version Checking**:
+   - Visit: `https://www.howsmyssl.com/a/check`
+   - Verify TLS version and cipher suites
+
+3. **HTTP/2 Verification**:
+   - Check HTTP/2 settings and priorities
+   - Ensure ALPN negotiation succeeds
+
+## Technical Details
+
+### Cipher Suite Priority
+
+The cipher suite ordering matters:
+
+```python
+# Preferred: Modern AEAD ciphers
+4865  # TLS_AES_128_GCM_SHA256
+4866  # TLS_AES_256_GCM_SHA384
+4867  # TLS_CHACHA20_POLY1305_SHA256
+
+# Fallback: ECDHE ciphers
+49195  # TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+49196  # TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+```
+
+This ordering indicates:
+- Preference for TLS 1.3 AEAD ciphers
+- Support for ChaCha20-Poly1305 (mobile-optimized)
+- Fallback to TLS 1.2 ECDHE ciphers
+
+### Extension Ordering
+
+TLS extensions must appear in the exact order:
+
+```
+0    - server_name (SNI)
+23   - extended_master_secret
+65281 - renegotiation_info
+10   - supported_groups
+11   - ec_point_formats
+35   - session_ticket
+16   - application_layer_protocol_negotiation (ALPN)
+5    - status_request (OCSP)
+13   - signature_algorithms
+51   - key_share
+45   - psk_key_exchange_modes
+43   - supported_versions
+21   - padding
+```
+
+### Elliptic Curve Configuration
+
+Supported curves in order of preference:
+
+```
+29 - x25519
+23 - secp256r1
+24 - secp384r1
+```
+
+<Info>
+x25519 is preferred for its performance on mobile devices, matching the Android app's optimization.
+</Info>
+
+## Troubleshooting
+
+### TLS Handshake Failures
+
+**Symptom**: Connection errors or SSL handshake failures
+
+**Solutions**:
+1. Verify proxy supports TLS 1.2/1.3
+2. Check cipher suite compatibility
+3. Ensure libcurl version is up to date
+
+### Fingerprint Mismatch Detection
+
+**Symptom**: 403 Forbidden despite correct headers
+
+**Solutions**:
+1. Verify JA3 fingerprint matches exactly
+2. Check Akamai string is correct
+3. Ensure signature algorithms are in the right order
+4. Update the SDK if the app version changed
+
+### Performance Issues
+
+**Symptom**: Slow TLS handshakes
+
+**Solutions**:
+1. Reuse session objects (connection pooling)
+2. Enable HTTP/2 multiplexing
+3. Use faster proxy servers
+
+## Best Practices
+
+### 1. Never Modify the Fingerprint
+
+```python
+# Good: Use the provided fingerprint
+kwargs.update(TLS_FINGERPRINT)
+
+# Bad: Don't modify it
+kwargs.update({"ja3": "custom_value"})  # Don't do this
+```
+
+### 2. Keep SDK Updated
+
+Bet365 updates their app regularly. Monitor for:
+- New app versions
+- Updated cipher suites
+- Changed TLS extensions
+
+### 3. Test Fingerprint Regularly
+
+```python
+# Verify fingerprint hasn't changed
+import hashlib
+
+expected_ja3_hash = hashlib.md5(TLS_FINGERPRINT["ja3"].encode()).hexdigest()
+print(f"JA3 Hash: {expected_ja3_hash}")
+```
+
+### 4. Monitor for Detection
+
+Log and analyze response patterns:
+
+```python
+if response.status_code == 403:
+    # Check if TLS fingerprint is detected
+    if "cloudflare" in response.text.lower():
+        logger.error("Possible TLS fingerprint detection")
+```
+
+## Advanced Configuration
+
+For advanced users, you can inspect the active TLS configuration:
+
+```python
+import ssl
+
+# Check OpenSSL version
+print(ssl.OPENSSL_VERSION)
+
+# List available ciphers
+context = ssl.create_default_context()
+print(context.get_ciphers())
+```
+
+<Note>
+The SDK abstracts these details, but understanding them helps troubleshoot issues and optimize for specific scenarios.
+</Note>
+
+## Conclusion
+
+TLS fingerprinting is a critical component of the Bet365 Scraper SDK's anti-bot protection strategy. By precisely mimicking the Android app's TLS characteristics, the SDK bypasses sophisticated detection systems.
+
+Key takeaways:
+- **JA3 fingerprinting** identifies clients by TLS handshake
+- **Akamai fingerprinting** extends JA3 with HTTP/2 characteristics
+- **curl_cffi** provides the low-level control needed for custom fingerprints
+- **Never modify** the TLS_FINGERPRINT configuration
+- **Stay updated** with the latest app versions

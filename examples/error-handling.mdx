@@ -1,0 +1,567 @@
+---
+title: 'Error Handling'
+description: 'Best practices for handling errors and implementing resilient scraping'
+---
+
+Proper error handling is crucial for building reliable Bet365 scraping applications. This guide covers common errors, how to handle them, and best practices for resilient scraping.
+
+## Common Error Types
+
+### Cloudflare Blocking (403 Errors)
+
+Cloudflare protection may block requests with incorrect headers or suspicious IP addresses.
+
+```python
+session = Bet365AndroidSession(
+    api_url=config["api_url"],
+    api_key=config["api_key"],
+    proxy=config["proxy"],
+    host="www.bet365.com"
+)
+
+try:
+    session.go_homepage()
+except AssertionError as e:
+    if "Blocked by Cloudflare" in str(e):
+        print("Error: Request blocked by Cloudflare")
+        print("Possible causes:")
+        print("  - Bad IP address or proxy")
+        print("  - Outdated headers")
+        print("  - Missing TLS fingerprint")
+        # Handle accordingly (switch proxy, update headers, etc.)
+    else:
+        raise
+```
+
+<Warning>
+  The SDK automatically includes the correct TLS fingerprint, but Cloudflare may still block based on IP reputation.
+</Warning>
+
+### Configuration Errors (500 Errors)
+
+Configuration fetch failures typically indicate IP-related issues:
+
+```python
+try:
+    session.go_homepage()
+except AssertionError as e:
+    if "Blocked while getting configuration" in str(e):
+        print("Error: Configuration fetch failed")
+        print("This is usually caused by:")
+        print("  - Blocked IP address")
+        print("  - Network connectivity issues")
+        print("  - Proxy problems")
+        # Implement retry logic or switch to different proxy
+    else:
+        raise
+```
+
+### API Key Authentication Failures
+
+The X-Net header generation requires a valid API key:
+
+```python
+try:
+    response = session.protected_get(url, headers=headers, params=params)
+except AssertionError as e:
+    if "error occured while generating token" in str(e).lower():
+        print("Error: API key authentication failed")
+        print("Possible causes:")
+        print("  - Invalid API key")
+        print("  - Expired API key")
+        print("  - API service unavailable")
+        print(f"Error details: {e}")
+        # Check your API key and service status
+    else:
+        raise
+```
+
+## Error Handling Patterns
+
+### Homepage Navigation with Retry
+
+<Steps>
+  <Step title="Implement Retry Logic">
+    Add retry mechanism for transient failures:
+
+    ```python
+    import time
+    from typing import Optional
+
+    def go_homepage_with_retry(
+        session: Bet365AndroidSession,
+        max_retries: int = 3,
+        delay: int = 5
+    ) -> bool:
+        """Navigate to homepage with retry logic."""
+        for attempt in range(max_retries):
+            try:
+                session.go_homepage()
+                print("Successfully loaded homepage")
+                return True
+            except AssertionError as e:
+                error_msg = str(e)
+                
+                if "Blocked by Cloudflare" in error_msg:
+                    print(f"Attempt {attempt + 1}: Blocked by Cloudflare")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {delay} seconds...")
+                        time.sleep(delay)
+                    else:
+                        print("Max retries reached. Consider:")
+                        print("  - Changing proxy")
+                        print("  - Updating headers")
+                        print("  - Waiting before retrying")
+                        return False
+                        
+                elif "configuration" in error_msg.lower():
+                    print(f"Attempt {attempt + 1}: Configuration fetch failed")
+                    if attempt < max_retries - 1:
+                        print(f"Retrying in {delay} seconds...")
+                        time.sleep(delay)
+                    else:
+                        print("Max retries reached. Check:")
+                        print("  - IP address status")
+                        print("  - Proxy configuration")
+                        print("  - Network connectivity")
+                        return False
+                else:
+                    # Unknown error, don't retry
+                    raise
+        
+        return False
+    ```
+  </Step>
+
+  <Step title="Use in Your Application">
+    ```python
+    session = Bet365AndroidSession(
+        config["api_url"],
+        config["api_key"],
+        proxy=config["proxy"],
+        host="www.bet365.com"
+    )
+
+    if go_homepage_with_retry(session):
+        # Proceed with scraping
+        sports = session.extract_available_sports()
+    else:
+        # Handle failure
+        print("Failed to initialize session")
+        exit(1)
+    ```
+  </Step>
+</Steps>
+
+### Protected Request Error Handling
+
+```python
+import requests
+from typing import Optional
+
+def safe_protected_get(
+    session: Bet365AndroidSession,
+    url: str,
+    headers: Optional[dict] = None,
+    **kwargs
+) -> Optional[requests.Response]:
+    """Make a protected GET request with error handling."""
+    try:
+        response = session.protected_get(url, headers=headers, **kwargs)
+        
+        # Check response status
+        if response.status_code == 200:
+            return response
+        elif response.status_code == 403:
+            print(f"Access denied (403) for {url}")
+            print("The request was blocked. Check:")
+            print("  - IP reputation")
+            print("  - Request headers")
+            print("  - Rate limiting")
+            return None
+        elif response.status_code == 500:
+            print(f"Server error (500) for {url}")
+            print("This may be temporary. Consider retrying.")
+            return None
+        else:
+            print(f"Unexpected status code {response.status_code} for {url}")
+            return None
+            
+    except AssertionError as e:
+        print(f"Assertion error during request: {e}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error during request: {type(e).__name__}: {e}")
+        return None
+```
+
+### Parsing Error Handling
+
+```python
+from bet365.message_parser import get_parsers, read_table, fix_data
+from typing import List, Dict, Any
+
+def safe_extract_match_tables(
+    response_text: str
+) -> List[Dict[str, Any]]:
+    """Extract match tables with error handling."""
+    match_tables = []
+    
+    try:
+        parsers = get_parsers(response_text)
+    except Exception as e:
+        print(f"Failed to parse response: {e}")
+        return match_tables
+    
+    for parser in parsers:
+        try:
+            # Find content sections
+            for _, _ in parser.find_sections(
+                "CL",
+                PV=lambda k, v: v and v.startswith("podcontentcontentapi"),
+                include_part_index=True
+            ):
+                # Find match groups
+                for idx, _ in parser.find_sections("MG", include_part_index=True):
+                    try:
+                        # Read table
+                        table = read_table(parser, idx)
+                        
+                        # Validate table structure
+                        if not table or "data" not in table:
+                            print(f"Invalid table structure at index {idx}")
+                            continue
+                        
+                        # Fix and append data
+                        fixed_table = fix_data(table)
+                        match_tables.append(fixed_table)
+                        
+                    except AssertionError as e:
+                        print(f"Assertion failed reading table at {idx}: {e}")
+                        continue
+                    except Exception as e:
+                        print(f"Error reading table at {idx}: {type(e).__name__}: {e}")
+                        continue
+                        
+        except Exception as e:
+            print(f"Error processing parser: {type(e).__name__}: {e}")
+            continue
+    
+    return match_tables
+```
+
+## Understanding Assert Statements
+
+The SDK uses assert statements for validation. Here are the key assertions:
+
+### Homepage Navigation Assertions
+
+```python
+# From android.py:167-171
+assert homepage_response.status_code == 200, (
+    "Blocked by Cloudflare, bad IP or headers should be updated"
+    if homepage_response.status_code == 403
+    else f"Unknown error while going to homepage: {homepage_response.status_code}"
+)
+```
+
+**Handling:**
+```python
+try:
+    session.go_homepage()
+except AssertionError as e:
+    if "403" in str(e) or "Cloudflare" in str(e):
+        # Handle Cloudflare block
+        handle_cloudflare_block()
+    else:
+        # Handle other errors
+        handle_other_error(e)
+```
+
+### Configuration Fetch Assertions
+
+```python
+# From android.py:193-197
+assert configuration_response.status_code == 200, (
+    "Blocked while getting configuration, probably bad IP"
+    if configuration_response.status_code == 500
+    else f"Unknown error while fetching configuration: {configuration_response.status_code}"
+)
+```
+
+**Handling:**
+```python
+try:
+    session.go_homepage()
+except AssertionError as e:
+    if "configuration" in str(e).lower():
+        # IP or network issue
+        switch_proxy_and_retry()
+```
+
+### API Token Generation Assertions
+
+```python
+# From android.py:254-256
+assert response.status_code == 200, (
+    "An error occured while generating token: " + response.text
+)
+```
+
+**Handling:**
+```python
+try:
+    response = session.protected_get(url, headers=headers)
+except AssertionError as e:
+    if "generating token" in str(e):
+        # API key or service issue
+        check_api_credentials()
+```
+
+### Table Reading Assertions
+
+```python
+# From message_parser.py:143
+assert parser.sections[0][idx + 1].type == "MA"
+```
+
+**Handling:**
+```python
+try:
+    table = read_table(parser, idx)
+except (AssertionError, IndexError) as e:
+    print(f"Invalid table structure at index {idx}")
+    # Skip this table and continue
+    continue
+```
+
+## Best Practices for Resilient Scraping
+
+<Steps>
+  <Step title="Always Use Try-Except Blocks">
+    Wrap all SDK calls in try-except blocks:
+
+    ```python
+    try:
+        session.go_homepage()
+    except AssertionError as e:
+        # Handle known assertion errors
+        handle_assertion_error(e)
+    except Exception as e:
+        # Handle unexpected errors
+        log_error(e)
+    ```
+  </Step>
+
+  <Step title="Implement Exponential Backoff">
+    Use exponential backoff for retries:
+
+    ```python
+    import time
+
+    def exponential_backoff_retry(func, max_retries=5):
+        for i in range(max_retries):
+            try:
+                return func()
+            except AssertionError as e:
+                if i == max_retries - 1:
+                    raise
+                wait_time = 2 ** i  # 1, 2, 4, 8, 16 seconds
+                print(f"Retry {i+1}/{max_retries} in {wait_time}s")
+                time.sleep(wait_time)
+    ```
+  </Step>
+
+  <Step title="Validate Data Before Processing">
+    Always validate parsed data:
+
+    ```python
+    table = read_table(parser, idx)
+    
+    # Validate structure
+    if not table or "data" not in table:
+        continue
+    
+    # Validate content
+    if not table["data"] or len(table["data"]) == 0:
+        continue
+    
+    # Process valid data
+    process_table(table)
+    ```
+  </Step>
+
+  <Step title="Log Errors for Debugging">
+    Maintain detailed logs:
+
+    ```python
+    import logging
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('scraper.log'),
+            logging.StreamHandler()
+        ]
+    )
+
+    try:
+        session.go_homepage()
+    except AssertionError as e:
+        logging.error(f"Homepage navigation failed: {e}")
+    ```
+  </Step>
+
+  <Step title="Handle Rate Limiting">
+    Implement delays between requests:
+
+    ```python
+    import time
+
+    sports = session.extract_available_sports()
+
+    for sport in sports:
+        try:
+            session.get_sport_homepage(sport)
+            time.sleep(2)  # 2-second delay between requests
+        except Exception as e:
+            print(f"Error fetching {sport.name}: {e}")
+            continue
+    ```
+  </Step>
+</Steps>
+
+## Complete Error Handling Example
+
+<CodeGroup>
+```python Production-Ready Script
+import json
+import time
+import logging
+from bet365 import Bet365AndroidSession
+from bet365.message_parser import get_parsers, read_table, fix_data
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def main():
+    # Load config
+    try:
+        with open("config.json") as fp:
+            config = json.load(fp)
+    except FileNotFoundError:
+        logger.error("config.json not found")
+        return
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in config.json: {e}")
+        return
+    
+    # Initialize session
+    session = Bet365AndroidSession(
+        config["api_url"],
+        config["api_key"],
+        proxy=config.get("proxy"),
+        host="www.bet365.com"
+    )
+    
+    # Navigate to homepage with retry
+    for attempt in range(3):
+        try:
+            session.go_homepage()
+            logger.info("Successfully loaded homepage")
+            break
+        except AssertionError as e:
+            logger.error(f"Attempt {attempt + 1} failed: {e}")
+            if attempt == 2:
+                logger.error("Max retries reached, exiting")
+                return
+            time.sleep(5)
+    
+    # Extract sports
+    try:
+        sports = session.extract_available_sports()
+        logger.info(f"Found {len(sports)} sports")
+    except Exception as e:
+        logger.error(f"Failed to extract sports: {e}")
+        return
+    
+    # Fetch sport data with error handling
+    for sport in sports[:5]:  # Limit to first 5
+        try:
+            logger.info(f"Fetching {sport.name}...")
+            session.get_sport_homepage(sport)
+            time.sleep(2)  # Rate limiting
+        except AssertionError as e:
+            logger.error(f"Failed to fetch {sport.name}: {e}")
+            continue
+        except Exception as e:
+            logger.error(f"Unexpected error for {sport.name}: {e}")
+            continue
+    
+    # Wait for background threads
+    if session.zap_thread:
+        session.zap_thread.join()
+    
+    logger.info("Scraping completed")
+
+if __name__ == "__main__":
+    main()
+```
+
+```python Custom Exception Handler
+from typing import Callable, Any, Optional
+import functools
+import logging
+
+logger = logging.getLogger(__name__)
+
+def handle_bet365_errors(func: Callable) -> Callable:
+    """Decorator for handling Bet365-specific errors."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Optional[Any]:
+        try:
+            return func(*args, **kwargs)
+        except AssertionError as e:
+            error_msg = str(e)
+            
+            if "Cloudflare" in error_msg or "403" in error_msg:
+                logger.error("Blocked by Cloudflare protection")
+                logger.info("Consider: changing proxy, updating headers")
+            elif "configuration" in error_msg.lower():
+                logger.error("Configuration fetch failed")
+                logger.info("Check: IP address, proxy, network")
+            elif "token" in error_msg.lower():
+                logger.error("API token generation failed")
+                logger.info("Check: API key, API service status")
+            else:
+                logger.error(f"Assertion failed: {error_msg}")
+            
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error: {type(e).__name__}: {e}")
+            return None
+    
+    return wrapper
+
+# Usage
+@handle_bet365_errors
+def fetch_sports(session):
+    return session.extract_available_sports()
+
+sports = fetch_sports(session)
+if sports:
+    print(f"Found {len(sports)} sports")
+```
+</CodeGroup>
+
+<Tip>
+  Always save raw responses to files during development (like `response.txt`) to help debug parsing issues.
+</Tip>
+
+## Next Steps
+
+- Review [fetching sports data](/examples/fetching-sports) examples
+- Learn about [parsing responses](/examples/parsing-responses) safely
+- Explore the [API Reference](/api/bet365-android-session) for all methods

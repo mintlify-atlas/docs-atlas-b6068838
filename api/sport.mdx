@@ -1,0 +1,141 @@
+---
+title: 'Sport'
+description: 'Dataclass representing a sport available on Bet365'
+---
+
+## Overview
+
+The `Sport` dataclass is a simple container that holds information about a specific sport on Bet365. It contains the human-readable name and the internal PD (Page Data) identifier used by Bet365's API.
+
+## Class Definition
+
+```python
+@dataclass
+class Sport:
+    name: str
+    PD: str
+```
+
+## Fields
+
+<ParamField path="name" type="str" required>
+  The human-readable name of the sport (e.g., "Soccer", "Basketball", "Tennis")
+</ParamField>
+
+<ParamField path="PD" type="str" required>
+  The Bet365 internal page data identifier for this sport. This is a formatted string used in API requests to specify which sport's data to retrieve.
+  
+  Example format: `#AS#B1#C1#D8#E12345#`
+</ParamField>
+
+## Usage
+
+### Creating a Sport Object
+
+```python
+from bet365.android import Sport
+
+# Create a sport manually
+football = Sport(
+    name="Soccer",
+    PD="#AS#B1#C1#D8#E12345#"
+)
+
+print(football.name)  # Output: Soccer
+print(football.PD)    # Output: #AS#B1#C1#D8#E12345#
+```
+
+### Getting Sports from Bet365
+
+Typically, you don't create `Sport` objects manually. Instead, you get them from the `extract_available_sports()` method:
+
+```python
+from bet365 import Bet365AndroidSession
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+
+session.go_homepage()
+sports = session.extract_available_sports()
+
+# sports is now a list of Sport objects
+for sport in sports:
+    print(f"{sport.name}: {sport.PD}")
+
+# Output:
+# Soccer: #AS#B1#C1#D8#E12345#
+# Basketball: #AS#B1#C1#D18#E67890#
+# Tennis: #AS#B1#C1#D13#E54321#
+```
+
+### Using Sport with get_sport_homepage()
+
+The primary use of `Sport` objects is to pass them to `get_sport_homepage()` to fetch data for that specific sport:
+
+```python
+session.go_homepage()
+sports = session.extract_available_sports()
+
+# Find a specific sport
+football = next((s for s in sports if "Soccer" in s.name), None)
+
+if football:
+    # Get homepage data for football
+    session.get_sport_homepage(football)
+```
+
+### Filtering and Searching Sports
+
+```python
+# Find all sports with "ball" in the name
+ball_sports = [s for s in sports if "ball" in s.name.lower()]
+
+for sport in ball_sports:
+    print(sport.name)
+# Output:
+# Football
+# Basketball
+# Volleyball
+
+# Get a specific sport by exact name
+tennis = next((s for s in sports if s.name == "Tennis"), None)
+
+if tennis:
+    print(f"Found Tennis with PD: {tennis.PD}")
+else:
+    print("Tennis not available")
+```
+
+## Integration Example
+
+```python
+from bet365 import Bet365AndroidSession
+from bet365.android import Sport
+
+# Initialize session
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+
+# Setup
+session.go_homepage()
+
+# Get all available sports
+available_sports = session.extract_available_sports()
+print(f"Total sports available: {len(available_sports)}")
+
+# Iterate through sports and get data
+for sport in available_sports[:3]:  # First 3 sports
+    print(f"\nFetching data for {sport.name}...")
+    session.get_sport_homepage(sport)
+```
+
+## Notes
+
+- The `PD` field format is internal to Bet365 and may change over time
+- Some sports may have PD identifiers that end with `K^5#` - the SDK automatically strips this suffix when extracting sports
+- The `name` field is extracted from the `NA` property in Bet365's API responses
+- Sport objects are immutable dataclasses, so you cannot modify their fields after creation

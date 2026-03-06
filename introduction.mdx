@@ -1,0 +1,145 @@
+---
+title: Introduction
+description: A powerful Python SDK for request-based Bet365 web scraping with advanced anti-bot protection and TLS fingerprinting
+---
+
+## Overview
+
+The Bet365 Scraper SDK is a Python library designed to interact with Bet365's Android and Web APIs while bypassing sophisticated anti-bot detection systems. It provides a robust, request-based scraping solution that handles TLS fingerprinting, cookie management, and device emulation to maintain stable access to betting data.
+
+This SDK emulates legitimate Android app behavior, utilizing custom TLS configurations and sophisticated header management to avoid triggering Cloudflare and other anti-bot protection mechanisms.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Android API Emulation" icon="mobile">
+    Mimics the official Bet365 Android app (v8.0.36.00) with accurate device fingerprinting and request patterns
+  </Card>
+  
+  <Card title="TLS Fingerprinting" icon="fingerprint">
+    Custom JA3 and Akamai fingerprints that match real Android devices to bypass bot detection
+  </Card>
+  
+  <Card title="Anti-Bot Protection" icon="shield">
+    Integrated X-Net-Sync-Term-Android header generation via external API for protected endpoints
+  </Card>
+  
+  <Card title="Session Management" icon="cookie">
+    Automatic cookie handling, device ID persistence, and SST token management
+  </Card>
+</CardGroup>
+
+## Architecture Overview
+
+The SDK is built around the `Bet365AndroidSession` class, which manages:
+
+- **HTTP Session Layer**: Uses `curl_cffi` for low-level TLS control and `tls_client` for API communication
+- **Device Emulation**: Generates persistent device IDs and maintains Android WebView user agents
+- **Protected Requests**: Routes requests through an external API to generate anti-bot tokens
+- **Data Parsing**: Custom message parsers for Bet365's proprietary data format
+
+```python
+# Core session initialization
+session = Bet365AndroidSession(
+    api_url="https://your-api-endpoint.com/get_x_net_android",
+    api_key="your_api_key",
+    proxy="http://proxy:port",  # Optional
+    host="www.bet365.com"
+)
+```
+
+### TLS Fingerprint Configuration
+
+The SDK uses a carefully crafted TLS fingerprint that matches Android devices:
+
+```python
+TLS_FINGERPRINT = {
+    "ja3": "771,4865-4866-4867-49195-49196-52393-49199-49200-52392-49171-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-51-45-43-21,29-23-24,0",
+    "akamai": "4:16777216|16711681|0|m,p,a,s",
+    "extra_fp": {
+        "tls_signature_algorithms": [
+            "ecdsa_secp256r1_sha256",
+            "rsa_pss_rsae_sha256",
+            "rsa_pkcs1_sha256",
+            # ... additional algorithms
+        ]
+    }
+}
+```
+
+## Use Cases
+
+### Odds Monitoring
+Track real-time odds changes across multiple sports and markets for value betting opportunities.
+
+```python
+sports = session.extract_available_sports()
+for sport in sports:
+    session.get_sport_homepage(sport)
+```
+
+### Surebet Detection
+Monitor multiple bookmakers simultaneously to identify arbitrage opportunities where odds discrepancies guarantee profit.
+
+### Automated Betting
+Integrate with betting automation systems to execute strategies based on live odds data and market movements.
+
+### Market Research
+Analyze betting patterns, market liquidity, and odds movements for statistical modeling and research purposes.
+
+## How It Works
+
+<Steps>
+  <Step title="Session Initialization">
+    The SDK creates a session with custom TLS fingerprints and Android user agent strings
+  </Step>
+  
+  <Step title="Homepage Navigation">
+    Visits Bet365 homepage to establish cookies and extract SST (Session State Token)
+  </Step>
+  
+  <Step title="Protected Requests">
+    Generates X-Net-Sync-Term-Android headers via external API for each protected endpoint
+  </Step>
+  
+  <Step title="Data Extraction">
+    Parses Bet365's proprietary message format to extract sports data, odds, and market information
+  </Step>
+</Steps>
+
+## Important Disclaimers
+
+<Warning>
+  **Authorized Use Only**: This SDK is designed to help developers handle bot-detection challenges under **legitimate and authorized use cases only**. It should only be used in compliance with Bet365's terms of service and applicable laws.
+</Warning>
+
+<Note>
+  **No Pre-Scraped Data**: This API does not return pre-scraped data. It provides a controlled environment for managing request patterns and mitigating false positives from automated protection systems.
+</Note>
+
+### Legal Considerations
+
+- Always review and comply with Bet365's Terms of Service
+- Ensure your use case is legally permitted in your jurisdiction
+- Consider rate limiting to avoid overloading Bet365's infrastructure
+- Respect robots.txt and other access control mechanisms
+- Contact the developer for guidance on legitimate use cases
+
+## What You'll Need
+
+- Python 3.8 or higher
+- Valid API key for X-Net header generation service
+- (Optional) Residential proxy for enhanced reliability
+- Basic understanding of HTTP requests and async programming
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running in 5 minutes with a complete example
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Detailed setup instructions for dependencies and configuration
+  </Card>
+</CardGroup>

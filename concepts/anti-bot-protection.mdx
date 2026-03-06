@@ -1,0 +1,297 @@
+---
+title: Anti-Bot Protection
+description: Learn how Bet365 Scraper SDK bypasses anti-bot detection mechanisms including Cloudflare protection
+---
+
+The Bet365 Scraper SDK implements sophisticated techniques to bypass anti-bot detection systems, including Cloudflare protection. This page explains the mechanisms used to maintain successful scraping operations.
+
+## Overview
+
+Bet365 employs multiple layers of protection to detect and block automated scraping:
+- **Cloudflare Protection**: Advanced bot detection and challenge systems
+- **TLS Fingerprinting**: Server-side analysis of TLS handshake patterns
+- **Header Validation**: Strict checking of HTTP headers and User-Agent strings
+- **Cookie Management**: Session tracking and device fingerprinting
+- **Custom Headers**: Proprietary anti-bot headers like `X-Net-Sync-Term-Android`
+
+The SDK addresses each of these protection layers with specific countermeasures.
+
+## Protected Request Method
+
+The core of the anti-bot protection is implemented in the `protected_get()` method of the `Bet365AndroidSession` class:
+
+```python
+def protected_get(
+    self, url: str, headers: Union[dict[str, str], None] = None, *args, **kwargs
+):
+    headers = headers or {}
+
+    cookie_header = build_cookies(self.session.cookies)
+
+    headers["Cookie"] = cookie_header
+    kwargs["default_headers"] = False
+    kwargs.update(TLS_FINGERPRINT)
+
+    params = kwargs.get("params", {})
+    if len(params):
+        parsed_url = urllib.parse.urlparse(url)
+        path = (
+            parsed_url.path + "?" + urllib.parse.urlencode(params)
+            if len(params)
+            else parsed_url.path
+        )
+        url = f"{parsed_url.scheme}://{parsed_url.netloc}{path}"
+    headers["X-Net-Sync-Term-Android"] = self.get_x_net_header(
+        url, cookie_header, b""
+    )
+    kwargs.update({"proxy": self.proxy, "verify": self.verify})
+    response = get(url, headers=headers, *args, **kwargs)
+
+    return response
+```
+
+<Info>
+The `protected_get()` method automatically applies TLS fingerprinting, custom headers, and cookie management to every request.
+</Info>
+
+## User-Agent Configuration
+
+The SDK mimics the official Bet365 Android app by using authentic User-Agent strings:
+
+```python
+headers={
+    "User-Agent": "Mozilla (Linux; Android 12 Phone; CPU M2003J15SC OS 12 like Gecko) Chrome/144.0.7559.59 Gen6 bet365/8.0.36.00",
+    "X-b365App-ID": "8.0.36.00-row",
+    "Host": "www.bet365.com",
+    "Connection": "Keep-Alive",
+    "Accept-Encoding": "gzip",
+}
+```
+
+**Key Components:**
+- **Device Information**: Android 12 Phone with specific model (M2003J15SC)
+- **Browser Engine**: Chrome 144.0.7559.59 Gen6
+- **App Version**: bet365/8.0.36.00
+- **App ID Header**: Identifies the specific app version and region (row = rest of world)
+
+<Warning>
+Using incorrect or outdated User-Agent strings will result in immediate detection and blocking. The SDK maintains up-to-date User-Agent configurations.
+</Warning>
+
+## X-Net-Sync-Term-Android Header
+
+Bet365 uses a proprietary anti-bot header called `X-Net-Sync-Term-Android` that validates request authenticity. This header is generated dynamically for each request:
+
+```python
+def get_x_net_header(self, url: str, cookie_header: str, post_data: bytes) -> str:
+    response = BogdanSession().post(
+        self.api_url,
+        headers={"x-net-api-key": self.api_key},
+        json={
+            "url": url,
+            "cookie": cookie_header,
+            "post_hash": base64.b64encode(
+                hashlib.sha256(post_data).digest()
+            ).decode(),
+            "sst": self._sst,
+            "device_id": self.device_id,
+        },
+    )
+    assert response.status_code == 200, (
+        "An error occured while generating token: " + response.text
+    )
+    return response.text
+```
+
+**Header Generation Inputs:**
+- **URL**: The target request URL
+- **Cookie Header**: Current session cookies
+- **Post Hash**: SHA-256 hash of POST data (empty for GET requests)
+- **SST**: Site security token obtained during initialization
+- **Device ID**: Persistent device identifier
+
+<Note>
+The X-Net-Sync-Term-Android header generation requires an API key and uses an external service. This is a critical component that cannot be bypassed.
+</Note>
+
+## Cloudflare Protection Handling
+
+The SDK includes specific error handling for Cloudflare protection:
+
+```python
+assert homepage_response.status_code == 200, (
+    "Blocked by Cloudflare, bad IP or headers should be updated"
+    if homepage_response.status_code == 403
+    else f"Unknown error while going to homepage: {homepage_response.status_code}"
+)
+```
+
+**Common Cloudflare Blocks:**
+- **403 Forbidden**: IP reputation issues or invalid headers
+- **503 Service Unavailable**: Challenge page requiring JavaScript execution
+- **429 Too Many Requests**: Rate limiting triggered
+
+<Tip>
+If you receive 403 errors consistently, consider using residential proxies with better IP reputation or updating header configurations.
+</Tip>
+
+## Session Management and Cookies
+
+Proper session and cookie management is critical for avoiding detection:
+
+### Device ID Generation
+
+```python
+self.device_id = f"00000000-0000-0000-{os.urandom(2).hex().upper()}-{os.urandom(6).hex().upper()}"
+```
+
+The device ID follows UUID format with partial randomization to appear unique while maintaining consistency across requests.
+
+### Cookie Building
+
+```python
+def build_cookies(cookies: dict[str, str]) -> str:
+    result = ""
+    for key, value in cookies.items():
+        result += f"{key}={value}; "
+    if len(result) > 0:
+        result = result[:-2]
+    return result
+```
+
+### USDI Cookie
+
+```python
+self.session.cookies["usdi"] = f"uqid={self.device_id}"
+```
+
+The `usdi` cookie contains the unique device identifier used for fingerprinting.
+
+## Configuration Initialization
+
+The SDK must properly initialize by fetching site configuration that includes the SST (Site Security Token):
+
+```python
+self._sst = configuration_response.json()["ns_weblib_util"]["WebsiteConfig"]["SST"]
+```
+
+The SST is required for generating valid `X-Net-Sync-Term-Android` headers.
+
+## Thread Safety
+
+Cookie operations are protected with thread locks to prevent race conditions:
+
+```python
+self._cookie_lock = threading.Lock()
+```
+
+<Warning>
+When making concurrent requests, ensure proper synchronization to avoid cookie corruption or session invalidation.
+</Warning>
+
+## Best Practices
+
+### 1. Use Residential Proxies
+
+```python
+Bet365AndroidSession(
+    api_url=API_URL,
+    api_key=API_KEY,
+    proxy="http://username:password@proxy.example.com:8080"
+)
+```
+
+Datacenter IPs are often flagged by Cloudflare.
+
+### 2. Respect Rate Limits
+
+Implement delays between requests to mimic human behavior:
+
+```python
+import time
+
+for sport in sports:
+    session.get_sport_homepage(sport)
+    time.sleep(random.uniform(2, 5))  # Random delay 2-5 seconds
+```
+
+### 3. Maintain Session State
+
+Reuse the same session object across requests:
+
+```python
+# Good: Reuse session
+session = Bet365AndroidSession(api_url, api_key)
+session.go_homepage()
+session.extract_available_sports()
+
+# Bad: Creating new sessions
+for sport in sports:
+    session = Bet365AndroidSession(api_url, api_key)  # Don't do this
+    session.get_sport_homepage(sport)
+```
+
+### 4. Update Headers Regularly
+
+Bet365 updates their app frequently. Monitor for changes:
+
+- App version numbers (8.0.36.00)
+- Chrome version (144.0.7559.59)
+- Device models and OS versions
+
+### 5. Handle Errors Gracefully
+
+```python
+try:
+    response = session.protected_get(url, headers=headers)
+except AssertionError as e:
+    if "Blocked by Cloudflare" in str(e):
+        # Switch proxy or wait
+        time.sleep(60)
+        response = session.protected_get(url, headers=headers)
+    else:
+        raise
+```
+
+## Security Headers
+
+The SDK includes comprehensive security headers that match the Android WebView:
+
+```python
+headers={
+    "sec-ch-ua": '"Android WebView";v="144", "Not?A_Brand";v="8", "Chromium";v="144"" Gen6 "',
+    "sec-ch-ua-mobile": "?1",
+    "sec-ch-ua-platform": '"Android"',
+    "sec-fetch-site": "none",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-user": "?1",
+    "sec-fetch-dest": "document",
+    "x-requested-with": "com.bet365Wrapper.Bet365_Application",
+}
+```
+
+These headers signal to the server that the request originates from the legitimate Android app.
+
+## Troubleshooting
+
+### 403 Forbidden Errors
+
+1. **Check IP Reputation**: Switch to a different proxy
+2. **Verify Headers**: Ensure User-Agent and app version are current
+3. **Check API Key**: Validate X-Net-Sync-Term-Android generation
+
+### Invalid Token Errors
+
+1. **Verify SST**: Ensure `go_homepage()` was called successfully
+2. **Check Device ID**: Verify device_id format is correct
+3. **Validate Cookies**: Ensure pstk cookie exists
+
+### Session Expiration
+
+1. **Re-initialize**: Call `go_homepage()` again
+2. **Check Cookie Lifetime**: Some cookies expire after 30 minutes
+3. **Verify Connection**: Ensure network connectivity is stable
+
+<Info>
+The SDK automatically handles most anti-bot protection mechanisms, but understanding these concepts helps troubleshoot issues and optimize performance.
+</Info>

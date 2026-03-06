@@ -1,0 +1,643 @@
+---
+title: Message Parsing
+description: Understanding Bet365's proprietary message format and how to parse it with the SDK
+---
+
+Bet365 uses a custom, proprietary message format for transmitting data instead of standard JSON or XML. The SDK provides robust parsing capabilities through the `Bet365MessageParser` and `Bet365Section` classes.
+
+## Bet365 Message Format
+
+Bet365's message format is a pipe-delimited, hierarchical structure that encodes sports data, odds, and metadata:
+
+### Basic Structure
+
+```
+TYPE;key1=value1;key2=value2|TYPE;key1=value1|...
+```
+
+**Format Components:**
+- **Sections**: Separated by `|` (pipe)
+- **Section Type**: First element before `;` (semicolon)
+- **Properties**: Key-value pairs separated by `;` and `=`
+- **Messages**: Multiple sections separated by `\b` (backspace character)
+
+### Example Message
+
+```
+CL;PD=#AL#B1#R^1#;NA=Football|MG;ID=1234|MA;NA=1X2|PA;OD=2/1;ID=5678
+```
+
+This represents:
+- **CL** (Classification): Football with path descriptor
+- **MG** (Match Group): Group ID 1234
+- **MA** (Market): Market name "1X2"
+- **PA** (Participant): Odds 2/1, ID 5678
+
+<Info>
+Bet365's format is optimized for size and parsing speed, reducing bandwidth usage for mobile apps.
+</Info>
+
+## Bet365Section Class
+
+The `Bet365Section` class represents a single parsed section:
+
+```python
+@dataclass
+class Bet365Section:
+    """Represents a parsed section from Bet365 message format."""
+
+    type: str
+    properties: dict[str, str]
+
+    def __init__(self, section_type: str, properties: dict[str, str]):
+        self.type = section_type
+        self.properties = properties
+```
+
+### Core Methods
+
+#### get_property()
+
+Retrieve a property value with an optional default:
+
+```python
+def get_property(self, key: str, default: Any = None) -> str:
+    """Get a property value with optional default."""
+    return str(self.properties.get(key, default))
+```
+
+**Usage:**
+```python
+section = Bet365Section("CL", {"NA": "Football", "PD": "#AL#B1#"})
+name = section.get_property("NA")  # "Football"
+path = section.get_property("PD")  # "#AL#B1#"
+missing = section.get_property("XX", "default")  # "default"
+```
+
+#### has_property()
+
+Check if a property exists:
+
+```python
+def has_property(self, key: str) -> bool:
+    """Check if section has a specific property."""
+    return key in self.properties
+```
+
+**Usage:**
+```python
+if section.has_property("PD"):
+    path = section.get_property("PD")
+```
+
+### Common Section Types
+
+| Type | Description | Common Properties |
+|------|-------------|-------------------|
+| **CL** | Classification/Category | NA (name), PD (path descriptor) |
+| **MG** | Match Group | ID (identifier) |
+| **MA** | Market | NA (name), ID (identifier) |
+| **PA** | Participant/Outcome | OD (odds), ID (identifier), FD (description) |
+| **CO** | Competition | NA (name), ID (identifier) |
+| **EV** | Event/Match | NA (name), ID (identifier) |
+| **F** | Frame delimiter | None (separator only) |
+
+<Note>
+Section types are two-letter codes. Understanding these codes is essential for navigating the message structure.
+</Note>
+
+## Bet365MessageParser Class
+
+The `Bet365MessageParser` class handles parsing and searching through message data:
+
+```python
+class Bet365MessageParser:
+    """Parser for Bet365 message format data."""
+
+    def __init__(self, sections: List[List[Bet365Section]]):
+        self.sections = sections
+```
+
+### Parsing Section Strings
+
+#### parse_section_string()
+
+Parse a single section string into a `Bet365Section` object:
+
+```python
+@staticmethod
+def parse_section_string(section_string: str) -> Bet365Section:
+    """
+    Parse a single section string into a Bet365Section object.
+
+    Args:
+        section_string: String in format "TYPE;key1=value1;key2=value2"
+
+    Returns:
+        Bet365Section object
+    """
+    parts = section_string.split(";")
+    section_type = parts[0]
+    properties = {}
+
+    for part in parts[1:]:
+        if part and "=" in part:
+            key, value = part.split("=", 1)
+            properties[key] = value
+
+    return Bet365Section(section_type, properties)
+```
+
+**Example:**
+```python
+section_str = "CL;NA=Football;PD=#AL#B1#R^1#"
+section = Bet365MessageParser.parse_section_string(section_str)
+
+print(section.type)  # "CL"
+print(section.get_property("NA"))  # "Football"
+print(section.get_property("PD"))  # "#AL#B1#R^1#"
+```
+
+#### parse_sections_list()
+
+Parse multiple section strings:
+
+```python
+@staticmethod
+def parse_sections_list(sections_list: List[str]) -> List[Bet365Section]:
+    """Parse a list of section strings into Bet365Section objects."""
+    return [
+        Bet365MessageParser.parse_section_string(section)
+        for section in sections_list
+        if section
+    ]
+```
+
+### Finding Sections
+
+The `find_sections()` method is the primary way to search for sections:
+
+```python
+def find_sections(
+    self, node_type: str, include_part_index: bool = False, **filters
+) -> Iterator[Tuple[int, Bet365Section]]:
+    """
+    Find sections matching specified criteria across all section groups.
+
+    Args:
+        node_type: The section type to search for
+        include_part_index: Whether to return part index along with section
+        **filters: Property filters to apply
+
+    Yields:
+        Tuples of (index, section or part)
+    """
+    for section_group in self.sections:
+        yield from self._find_in_section_group(
+            section_group, node_type, include_part_index, **filters
+        )
+```
+
+### Filter Matching
+
+```python
+@staticmethod
+def _matches_filters(section: Bet365Section, filters: Dict[str, Any]) -> bool:
+    """Check if a section matches all specified filters."""
+    for key, expected_value in filters.items():
+        if key == "include_part_index":
+            continue
+
+        actual_value = section.get_property(key)
+
+        if callable(expected_value):
+            if not expected_value(key, actual_value):
+                return False
+        elif actual_value != expected_value:
+            return False
+
+    return True
+```
+
+<Tip>
+Filters can be either exact values or callable functions for complex matching logic.
+</Tip>
+
+## Parsing Complete Messages
+
+The `get_parsers()` function creates parser instances from raw response data:
+
+```python
+def get_parsers(data: str) -> List[Bet365MessageParser]:
+    parsers = []
+    parsed_sections = []
+    for section_group in data.split("\b"):
+        sections = section_group.split("|")
+        parsed_sections.append(Bet365MessageParser.parse_sections_list(sections))
+
+    for _section in parsed_sections:
+        for section in split_list_by_delimiter(_section, Bet365Section("F", {})):
+            if not section:
+                continue
+            parsers.append(Bet365MessageParser([section]))
+    return parsers
+```
+
+**Processing Flow:**
+1. Split by `\b` (backspace) to separate messages
+2. Split each message by `|` to get sections
+3. Parse each section string into `Bet365Section` objects
+4. Split by "F" frame delimiters
+5. Create `Bet365MessageParser` for each group
+
+## Real-World Examples
+
+### Example 1: Extracting Available Sports
+
+From `android.py:115-143`:
+
+```python
+def extract_available_sports(self) -> list[Sport]:
+    r = self.protected_get(
+        f"https://{self.host}/leftnavcontentapi/allsportsmenu",
+        params={
+            "lid": "30",
+            "zid": "0",
+            "pd": "#AL#B1#R^1#",
+        },
+        headers={
+            "User-Agent": "Mozilla (Linux; Android 12 Phone; CPU M2003J15SC OS 12 like Gecko) Chrome/144.0.7559.59 Gen6 bet365/8.0.36.00",
+            "X-b365App-ID": "8.0.36.00-row",
+            "Accept-Encoding": "gzip",
+        },
+    )
+    sports = []
+    for parser in get_parsers(r.text):
+        for _, cl in parser.find_sections(
+            "CL", PD=NOT_NULL, NA=NOT_NULL, include_part_index=True
+        ):
+            pd = cl.get_property("PD", "")
+            if pd.endswith("K^5#"):
+                pd = pd[: -len("K^5#")]
+            sports.append(Sport(cl.get_property("NA"), pd))
+    return sports
+```
+
+**What's happening:**
+1. Make request to sports menu API
+2. Parse response with `get_parsers()`
+3. Find all "CL" sections that have PD and NA properties
+4. Extract sport name (NA) and path descriptor (PD)
+5. Clean up PD suffix if present
+6. Create `Sport` objects
+
+**Custom Filter Function:**
+```python
+def NOT_NULL(_, m):
+    return m is not None
+```
+
+This ensures both PD and NA properties exist and are not None.
+
+<Warning>
+Always check for None values when extracting properties. Missing properties return the default value (None).
+</Warning>
+
+### Example 2: Finding Match Tables
+
+From `android.py:104-113`:
+
+```python
+for parser in get_parsers(splash_response.text):
+    for _, _ in parser.find_sections(
+        "CL",
+        PV=lambda k, v: v.startswith("podcontentcontentapi"),
+        include_part_index=True,
+    ):
+        for idx, _ in parser.find_sections("MG", include_part_index=True):
+            table = read_table(parser, idx)
+            pretty_print_table(table)
+            match_tables.append(fix_data(table))
+```
+
+**What's happening:**
+1. Parse splash response data
+2. Find "CL" sections where PV property starts with "podcontentcontentapi"
+3. Within those sections, find all "MG" (Match Group) sections
+4. Read table data starting at each MG index
+5. Format and collect match data
+
+**Lambda Filter:**
+```python
+PV=lambda k, v: v.startswith("podcontentcontentapi")
+```
+
+Filters accept callable functions for complex matching.
+
+### Example 3: Reading Table Data
+
+From `message_parser.py:142-177`:
+
+```python
+def read_table(parser, idx, extra_properties=[]) -> Dict[str, Any]:
+    assert parser.sections[0][idx + 1].type == "MA"
+    result = {"title": parser.sections[0][idx].get_property("NA"), "data": []}
+
+    idx += 1
+
+    def get_key_name(idx) -> Tuple[str, int]:
+        key_name = parser.sections[0][idx].get_property("NA")
+        idx += 1
+        if (
+            key_name is None
+            and parser.sections[0][idx].type == "CO"
+            and parser.sections[0][idx].get_property("NA")
+        ):
+            key_name = parser.sections[0][idx].get_property("NA")
+            idx += 1
+        extra = {
+            property: parser.sections[0][idx - 1].get_property(property)
+            for property in extra_properties
+            if parser.sections[0][idx - 1].get_property(property)
+        }
+        return key_name or "No row", idx, extra
+
+    while idx < len(parser.sections[0]) and parser.sections[0][idx].type in [
+        "MA",
+        "CO",
+    ]:
+        name, idx, extra = get_key_name(idx)
+        data = []
+        while idx < len(parser.sections[0]) and parser.sections[0][idx].type == "PA":
+            current_pa = parser.sections[0][idx]
+            data.append(asdict(current_pa))
+            idx += 1
+        result["data"].append({"name": name, "values": data, "extra": extra})
+    return result
+```
+
+**Table Structure:**
+```python
+{
+    "title": "Match Title",
+    "data": [
+        {
+            "name": "Team/Outcome Name",
+            "values": [
+                {"type": "PA", "properties": {"OD": "2/1", "ID": "123"}},
+                ...
+            ],
+            "extra": {"property": "value"}
+        },
+        ...
+    ]
+}
+```
+
+### Example 4: Extracting Odds Data
+
+From `message_parser.py:188-211`:
+
+```python
+def fix_data(table):
+    data = table["data"]
+    result = []
+    for i in range(len(data[0]["values"])):
+        row = [data[0]["values"][i]["properties"].get("FD", "")]
+        for j in range(1, len(data)):
+            row.append(
+                f"{parse_odds(data[j]['values'][i]['properties'].get('OD', '')):0.2f}"
+            )
+        result.append(
+            {
+                "FD": data[0]["values"][i]["properties"].get("FD", ""),
+                "ODS": [
+                    data[j]["values"][i]["properties"].get("OD", "")
+                    for j in range(1, len(data))
+                ],
+                "ODS_IDS": [
+                    data[j]["values"][i]["properties"].get("ID", "")
+                    for j in range(1, len(data))
+                ],
+                "other_properties": data[0]["values"][i]["properties"],
+            }
+        )
+    return result
+```
+
+**Output Format:**
+```python
+[
+    {
+        "FD": "Home Win",
+        "ODS": ["2/1", "5/2"],
+        "ODS_IDS": ["12345", "12346"],
+        "other_properties": {"SU": "1", "FI": "0"}
+    },
+    ...
+]
+```
+
+<Info>
+The `parse_odds()` function converts fractional odds ("2/1") to decimal odds (3.00).
+</Info>
+
+## Common Property Keys
+
+### Universal Properties
+
+| Key | Description | Example |
+|-----|-------------|----------|
+| **NA** | Name/Label | "Football", "1X2", "Manchester United" |
+| **ID** | Unique identifier | "12345678" |
+| **PD** | Path descriptor | "#AL#B1#R^1#" |
+| **FD** | Full description | "Manchester United vs Liverpool" |
+
+### Odds Properties
+
+| Key | Description | Example |
+|-----|-------------|----------|
+| **OD** | Odds (fractional) | "2/1", "5/2", "11/10" |
+| **SU** | Suspended flag | "0" (active), "1" (suspended) |
+| **FI** | Fixed odds indicator | "0" or "1" |
+| **OR** | Odds reference | Internal reference ID |
+
+### Event Properties
+
+| Key | Description | Example |
+|-----|-------------|----------|
+| **BC** | Best code | Event classification code |
+| **CT** | Classification type | Sport/league type |
+| **EI** | Event ID | Unique event identifier |
+| **TU** | Time/Date | Timestamp |
+
+## Utility Functions
+
+### parse_odds()
+
+From `utils.py:6-27`:
+
+```python
+def parse_odds(odds_string: str) -> Union[float, None]:
+    """
+    Parse odds from fraction format to decimal format.
+
+    Args:
+        odds_string: Odds in "numerator/denominator" format
+
+    Returns:
+        Decimal odds value
+    """
+    if not odds_string:
+        return 0.0
+    numerator, denominator = odds_string.split("/")
+
+    if denominator == "0":
+        return 0.0
+
+    return float(
+        (Decimal(numerator) / Decimal(denominator) + Decimal(1)).quantize(
+            Decimal("0.00"), rounding="ROUND_DOWN"
+        )
+    )
+```
+
+**Conversion:**
+- `"2/1"` → `3.00` (2÷1 + 1)
+- `"5/2"` → `3.50` (5÷2 + 1)
+- `"11/10"` → `2.10` (11÷10 + 1)
+
+### split_list_by_delimiter()
+
+From `utils.py:55-77`:
+
+```python
+def split_list_by_delimiter(items: List[Any], delimiter: Any) -> List[List[Any]]:
+    """
+    Split a list into sublists based on a delimiter.
+
+    Args:
+        items: The list to split
+        delimiter: The value to split on
+
+    Returns:
+        List of sublists split by the delimiter
+    """
+    results = []
+    items_copy = items.copy()
+
+    while delimiter in items_copy:
+        delimiter_index = items_copy.index(delimiter)
+        results.append(items_copy[:delimiter_index])
+        items_copy = items_copy[delimiter_index + 1 :]
+
+    if items_copy:  # Add remaining items
+        results.append(items_copy)
+
+    return results
+```
+
+Used to split sections by "F" (frame) delimiters.
+
+## Best Practices
+
+### 1. Always Use Filters
+
+```python
+# Good: Filter to specific sections
+for _, section in parser.find_sections("CL", PD=NOT_NULL, NA=NOT_NULL):
+    process_section(section)
+
+# Bad: Iterate all sections manually
+for section in parser.sections[0]:
+    if section.type == "CL":
+        process_section(section)
+```
+
+### 2. Check Property Existence
+
+```python
+# Good: Check before accessing
+if section.has_property("OD"):
+    odds = parse_odds(section.get_property("OD"))
+
+# Bad: Assume property exists
+odds = parse_odds(section.get_property("OD"))  # May fail if OD is None
+```
+
+### 3. Use Callable Filters for Complex Logic
+
+```python
+# Good: Lambda for complex matching
+parser.find_sections(
+    "PA",
+    OD=lambda k, v: v and parse_odds(v) > 2.0,
+    include_part_index=True
+)
+
+# Bad: Filter after fetching
+for _, section in parser.find_sections("PA", include_part_index=True):
+    if parse_odds(section.get_property("OD")) > 2.0:
+        process_section(section)
+```
+
+### 4. Handle Missing Data Gracefully
+
+```python
+# Good: Provide defaults
+name = section.get_property("NA", "Unknown")
+odds = section.get_property("OD", "0/1")
+
+# Bad: No defaults
+name = section.get_property("NA")  # Could be None
+```
+
+## Troubleshooting
+
+### Empty Parser Results
+
+**Issue**: `get_parsers()` returns empty list
+
+**Solutions**:
+1. Check response data format
+2. Verify `\b` delimiters exist
+3. Inspect raw response text
+
+### Section Not Found
+
+**Issue**: `find_sections()` yields no results
+
+**Solutions**:
+1. Verify section type code is correct
+2. Check filter criteria aren't too restrictive
+3. Print all section types to inspect structure
+
+```python
+for section in parser.sections[0]:
+    print(f"Type: {section.type}, Properties: {section.properties}")
+```
+
+### Property Extraction Fails
+
+**Issue**: `get_property()` returns None or default
+
+**Solutions**:
+1. Use `has_property()` to verify existence
+2. Check property key spelling (case-sensitive)
+3. Inspect section properties dictionary
+
+<Note>
+When debugging, save the raw response to a file and inspect it manually to understand the structure.
+</Note>
+
+## Conclusion
+
+Bet365's proprietary message format requires specialized parsing, but the SDK provides powerful tools to extract data efficiently:
+
+- **Bet365Section**: Represents individual sections with property access
+- **Bet365MessageParser**: Finds and filters sections across messages
+- **get_parsers()**: Creates parsers from raw response data
+- **Filters**: Support exact matching and callable functions
+- **Utility functions**: Parse odds, split lists, format data
+
+Mastering these tools enables you to extract any data from Bet365 responses with precision and reliability.

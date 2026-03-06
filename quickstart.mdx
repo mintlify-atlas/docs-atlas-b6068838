@@ -1,80 +1,260 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get your first Bet365 scraper running in minutes with this step-by-step guide
 ---
 
-## Get started in three steps
+This quickstart guide will walk you through setting up the Bet365 Scraper SDK and running your first successful data extraction in under 5 minutes.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- Python 3.8 or higher installed
+- API key for the X-Net header generation service
+- Basic terminal/command line knowledge
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  If you don't have an API key yet, contact the developer via [Discord](https://discord.gg/u56FypRKKc) to request access.
 </Note>
+
+## Getting Started
+
+<Steps>
+  <Step title="Install Dependencies">
+    First, install the required Python packages:
+
+    ```bash
+    pip3 install -r requirements.txt
+    ```
+
+    This installs three core dependencies:
+    - **curl_cffi**: Low-level HTTP client with TLS fingerprinting support
+    - **tls_client**: Additional TLS client for API communication
+    - **prettytable**: Table formatting for displaying scraped data
+  </Step>
+
+  <Step title="Configure API Credentials">
+    Create or edit the `config.json` file in your project root:
+
+    ```json
+    {
+      "api_url": "https://vercel-android-server-three.vercel.app/get_x_net_android",
+      "api_key": "your_api_key_here",
+      "proxy": "",
+      "email": "",
+      "password": ""
+    }
+    ```
+
+    <Warning>
+      **Required Configuration:**
+      - `api_url`: The endpoint for X-Net header generation (provided by the service)
+      - `api_key`: Your authentication key for the API service
+    </Warning>
+
+    <Note>
+      **Optional Configuration:**
+      - `proxy`: Add a proxy URL (format: `http://user:pass@host:port`) for enhanced reliability
+      - `email` and `password`: Reserved for future authentication features
+    </Note>
+  </Step>
+
+  <Step title="Initialize the Session">
+    Create a new Python file or use the provided `main.py`:
+
+    ```python
+    import json
+    from bet365 import Bet365AndroidSession
+
+    # Load configuration
+    with open("config.json", encoding="utf8") as fp:
+        config = json.load(fp)
+
+    # Initialize the session
+    session = Bet365AndroidSession(
+        config["api_url"],
+        config["api_key"],
+        proxy=config["proxy"] or None,
+        verify=False,
+        host="www.bet365.com",
+    )
+    ```
+
+    The `Bet365AndroidSession` handles:
+    - TLS fingerprinting to match Android devices
+    - Cookie management and device ID generation
+    - Anti-bot protection headers
+  </Step>
+
+  <Step title="Navigate to Homepage">
+    Establish a session by visiting the Bet365 homepage:
+
+    ```python
+    print("Going to homepage...")
+    session.go_homepage()
+    ```
+
+    This critical step:
+    - Establishes cookies and session tokens
+    - Extracts the SST (Session State Token) for subsequent requests
+    - Initializes device fingerprinting
+
+    <Note>
+      The homepage navigation may take longer than expected due to `curl_cffi` initialization. This is normal behavior.
+    </Note>
+  </Step>
+
+  <Step title="Extract Available Sports">
+    Retrieve the list of all available sports from Bet365:
+
+    ```python
+    sports = session.extract_available_sports()
+
+    # Display available sports
+    for sport in sports:
+        print(f"Sport: {sport.name}, PD: {sport.PD}")
+    ```
+
+    Each `Sport` object contains:
+    - `name`: Human-readable sport name (e.g., "Soccer", "Tennis")
+    - `PD`: Bet365's internal page descriptor identifier
+  </Step>
+
+  <Step title="Scrape Sport Homepage Data">
+    Extract odds and match data from a specific sport:
+
+    ```python
+    # Find Soccer sport
+    soccer = next(filter(lambda m: m.name == "Soccer", sports))
+
+    # Get Soccer homepage with matches and odds
+    session.get_sport_homepage(soccer)
+    ```
+
+    This method:
+    - Fetches splash pods containing match data
+    - Parses tables with odds, teams, and market information
+    - Pretty-prints the data to console
+    - Saves raw response to `response.txt` for debugging
+  </Step>
+
+  <Step title="Run the Complete Example">
+    Execute the complete script:
+
+    ```bash
+    python3 main.py
+    ```
+
+    Expected output:
+    ```
+    Fetching soccer page using android api
+    Going to homepage started taking longer than it should because of curl_cffi.
+    False  # ZAP connection availability
+    Sport: Soccer, PD: #AS#B1#...
+    Sport: Tennis, PD: #AS#B2#...
+    # ... (match tables with odds data)
+    ```
+
+    The scraper will:
+    1. Navigate to Bet365 homepage
+    2. List all available sports
+    3. Extract Soccer matches and odds
+    4. Display formatted tables in the console
+  </Step>
+</Steps>
+
+## Complete Working Example
+
+Here's the full `main.py` implementation:
+
+```python
+import json
+from bet365 import Bet365AndroidSession
+
+with open("config.json", encoding="utf8") as fp:
+    config = json.load(fp)
+
+print("Fetching soccer page using android api")
+
+session = Bet365AndroidSession(
+    config["api_url"],
+    config["api_key"],
+    proxy=config["proxy"] or None,
+    verify=False,
+    host="www.bet365.com",
+)
+
+print("Going to homepage started taking longer than it should because of curl_cffi.")
+session.go_homepage()
+
+sports = session.extract_available_sports()
+soccer = next(filter(lambda m: m.name == "Soccer", sports))
+session.get_sport_homepage(soccer)
+
+if session.zap_thread is not None:
+    session.zap_thread.join()
+```
+
+## Understanding the Output
+
+The SDK will display:
+
+- **Pretty-printed tables**: Match data formatted using `prettytable`
+- **Raw response file**: `response.txt` contains the full API response for debugging
+- **Console logs**: Progress indicators and error messages
+
+## Troubleshooting
+
+<Warning>
+  **403 Forbidden Error**: If you receive a 403 status code, this typically means:
+  - Your IP address is blocked by Cloudflare
+  - Headers need updating (contact support)
+  - Proxy configuration required
+</Warning>
+
+<Note>
+  **500 Internal Error**: Usually indicates:
+  - Bad IP address or proxy
+  - Configuration endpoint is unavailable
+  - Rate limiting triggered
+</Note>
+
+### Common Issues
+
+**API Key Invalid**
+```
+An error occured while generating token: Invalid API key
+```
+→ Verify your `api_key` in `config.json` is correct
+
+**Assertion Error During Homepage**
+```
+AssertionError: Blocked by Cloudflare...
+```
+→ Try using a residential proxy or contact support for header updates
+
+**Import Error**
+```
+ModuleNotFoundError: No module named 'curl_cffi'
+```
+→ Run `pip3 install -r requirements.txt` to install dependencies
+
+## Next Steps
+
+Now that you have a working scraper:
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/bet365-android-session">
+    Explore all available methods and parameters
+  </Card>
+  
+  <Card title="Core Concepts" icon="book" href="/concepts/anti-bot-protection">
+    Learn about anti-bot protection and TLS fingerprinting
+  </Card>
+  
+  <Card title="Message Parsing" icon="brackets-curly" href="/concepts/message-parsing">
+    Understand Bet365's message format and parsing
+  </Card>
+  
+  <Card title="Error Handling" icon="triangle-exclamation" href="/examples/error-handling">
+    Best practices for handling errors and edge cases
+  </Card>
+</CardGroup>

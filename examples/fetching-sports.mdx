@@ -1,0 +1,205 @@
+---
+title: 'Fetching Sports Data'
+description: 'Complete example of fetching available sports and retrieving sport-specific data from Bet365'
+---
+
+This guide demonstrates how to fetch sports data from Bet365 using the Android API session. You'll learn how to initialize a session, navigate to the homepage, extract available sports, and retrieve detailed data for a specific sport.
+
+## Complete Example
+
+Here's a full working example based on the SDK's main implementation:
+
+```python
+import json
+from bet365 import Bet365AndroidSession
+
+# Load configuration
+with open("config.json", encoding="utf8") as fp:
+    config = json.load(fp)
+
+print("Fetching soccer page using android api")
+
+# Initialize session
+session = Bet365AndroidSession(
+    config["api_url"],
+    config["api_key"],
+    proxy=config["proxy"] or None,
+    verify=False,
+    host="www.bet365.com",
+)
+
+# Navigate to homepage
+print("Going to homepage...")
+session.go_homepage()
+
+# Extract available sports
+sports = session.extract_available_sports()
+
+# Find soccer and get its data
+soccer = next(filter(lambda m: m.name == "Soccer", sports))
+session.get_sport_homepage(soccer)
+
+# Wait for background threads to complete
+if session.zap_thread is not None:
+    session.zap_thread.join()
+```
+
+## Step-by-Step Workflow
+
+<Steps>
+  <Step title="Initialize the Session">
+    Create a `Bet365AndroidSession` instance with your API credentials and configuration:
+
+    ```python
+    session = Bet365AndroidSession(
+        api_url="https://your-api-url.com",
+        api_key="your_api_key",
+        proxy="http://proxy:port",  # Optional
+        verify=False,
+        host="www.bet365.com"
+    )
+    ```
+
+    <Note>
+      The session automatically configures TLS fingerprinting to mimic Android app requests.
+    </Note>
+  </Step>
+
+  <Step title="Go to Homepage">
+    Navigate to the Bet365 homepage to initialize cookies and configuration:
+
+    ```python
+    session.go_homepage()
+    ```
+
+    This method:
+    - Fetches the homepage HTML
+    - Retrieves site configuration
+    - Sets up necessary cookies (`usdi`, `pstk`)
+    - Extracts the SST token for subsequent requests
+
+    <Warning>
+      This step may take longer than expected due to `curl_cffi` initialization.
+    </Warning>
+  </Step>
+
+  <Step title="Extract Available Sports">
+    Retrieve the list of all available sports:
+
+    ```python
+    sports = session.extract_available_sports()
+
+    # Sports is a list of Sport objects
+    for sport in sports:
+        print(f"Name: {sport.name}, PD: {sport.PD}")
+    ```
+
+    Each `Sport` object contains:
+    - `name`: The sport's display name (e.g., "Soccer", "Tennis", "Basketball")
+    - `PD`: The sport's path descriptor for API requests
+  </Step>
+
+  <Step title="Get Sport-Specific Data">
+    Fetch detailed data for a specific sport:
+
+    ```python
+    # Find the sport you want
+    soccer = next(filter(lambda m: m.name == "Soccer", sports))
+
+    # Get sport homepage data
+    session.get_sport_homepage(soccer)
+    ```
+
+    This retrieves "splash pods" containing:
+    - Match listings
+    - Betting markets
+    - Odds data
+    - Competition information
+  </Step>
+
+  <Step title="Process the Results">
+    The `get_sport_homepage()` method automatically parses the response and extracts match tables:
+
+    ```python
+    # The method internally:
+    # 1. Fetches splash pods for the sport
+    # 2. Parses the response using get_parsers()
+    # 3. Finds match sections with find_sections()
+    # 4. Reads tables with read_table()
+    # 5. Pretty prints and returns formatted data
+    ```
+
+    <Tip>
+      Match data is also saved to `response.txt` for debugging purposes.
+    </Tip>
+  </Step>
+</Steps>
+
+## Configuration File Format
+
+Create a `config.json` file with the following structure:
+
+```json
+{
+  "api_url": "https://your-api-endpoint.com",
+  "api_key": "your_api_key_here",
+  "proxy": "http://proxy-server:port"
+}
+```
+
+<Note>
+  Set `proxy` to `null` or empty string if you don't need a proxy.
+</Note>
+
+## Expected Output
+
+When you run the script, you'll see:
+
+1. **Session initialization** confirmation
+2. **Homepage navigation** status
+3. **Available sports** list with names and PD values
+4. **Pretty-printed tables** showing:
+   - Match names
+   - Betting markets
+   - Odds values
+   - Competition details
+
+## Common Use Cases
+
+<CodeGroup>
+```python Fetch Multiple Sports
+sports = session.extract_available_sports()
+
+# Process multiple sports
+for sport_name in ["Soccer", "Tennis", "Basketball"]:
+    sport = next((s for s in sports if s.name == sport_name), None)
+    if sport:
+        print(f"Fetching {sport_name}...")
+        session.get_sport_homepage(sport)
+```
+
+```python Filter by Sport Name
+sports = session.extract_available_sports()
+
+# Get all sports containing "Football"
+football_sports = [s for s in sports if "Football" in s.name]
+
+for sport in football_sports:
+    print(f"Found: {sport.name}")
+    session.get_sport_homepage(sport)
+```
+
+```python Check Available Sports
+sports = session.extract_available_sports()
+
+print(f"Total sports available: {len(sports)}")
+for sport in sports:
+    print(f"  - {sport.name}")
+```
+</CodeGroup>
+
+## Next Steps
+
+- Learn how to [parse response data](/examples/parsing-responses)
+- Implement [error handling](/examples/error-handling) for robust scraping
+- Explore the [API Reference](/api/bet365-android-session) for more methods

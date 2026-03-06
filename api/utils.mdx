@@ -1,0 +1,313 @@
+---
+title: 'Utility Functions'
+description: 'Helper functions for parsing and formatting Bet365 data'
+---
+
+## Overview
+
+The `bet365.utils` module provides utility functions for common data transformation tasks when working with Bet365 data, including odds conversion, datetime formatting, and list manipulation.
+
+## Functions
+
+### parse_odds()
+
+Converts odds from Bet365's fraction format to decimal format.
+
+```python
+def parse_odds(odds_string: str) -> Union[float, None]
+```
+
+<ParamField path="odds_string" type="str" required>
+  Odds in fraction format (e.g., "3/1", "5/2", "11/10")
+</ParamField>
+
+**Returns:** `float | None` - Decimal odds value rounded down to 2 decimal places, or 0.0 if invalid
+
+**Calculation:** `(numerator / denominator) + 1`
+
+**Example:**
+```python
+from bet365.utils import parse_odds
+
+# Convert fractional odds to decimal
+odds1 = parse_odds("3/1")
+print(odds1)  # Output: 4.0
+
+odds2 = parse_odds("5/2")
+print(odds2)  # Output: 3.5
+
+odds3 = parse_odds("11/10")
+print(odds3)  # Output: 2.1
+
+# Handle edge cases
+empty_odds = parse_odds("")
+print(empty_odds)  # Output: 0.0
+
+zero_denominator = parse_odds("5/0")
+print(zero_denominator)  # Output: 0.0
+```
+
+<Expandable title="Odds conversion explained">
+  Bet365 uses fractional odds (e.g., 3/1 means "3 to 1"). To convert to decimal:
+  
+  - 3/1 = (3 ÷ 1) + 1 = 4.0
+  - 5/2 = (5 ÷ 2) + 1 = 3.5
+  - 1/2 = (1 ÷ 2) + 1 = 1.5
+  
+  Decimal odds represent the total return (stake + profit) per unit staked.
+</Expandable>
+
+**Usage in parsing:**
+```python
+from bet365.message_parser import get_parsers
+from bet365.utils import parse_odds
+
+response = session.protected_get(...)
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    for idx, section in parser.find_sections("PA", include_part_index=True):
+        fractional_odds = section.get_property("OD")
+        decimal_odds = parse_odds(fractional_odds)
+        team = section.get_property("FD")
+        
+        print(f"{team}: {fractional_odds} ({decimal_odds:.2f})")
+        # Output: Team A: 5/2 (3.50)
+```
+
+---
+
+### format_datetime()
+
+Formats Bet365's 14-character timestamp string into a readable date/time format.
+
+```python
+def format_datetime(timestamp: str) -> str
+```
+
+<ParamField path="timestamp" type="str" required>
+  14-character timestamp string in format `YYYYMMDDHHMMSS`
+</ParamField>
+
+**Returns:** `str` - Formatted datetime string in format `DD/MM/YYYY HH:MM:SS`
+
+**Example:**
+```python
+from bet365.utils import format_datetime
+
+# Format a timestamp
+timestamp = "20260306143000"
+formatted = format_datetime(timestamp)
+print(formatted)  # Output: 06/03/2026 14:30:00
+
+# Another example
+timestamp2 = "20251225120000"
+formatted2 = format_datetime(timestamp2)
+print(formatted2)  # Output: 25/12/2025 12:00:00
+
+# Handle edge cases
+empty = format_datetime("")
+print(empty)  # Output: ""
+
+short = format_datetime("2026")
+print(short)  # Output: 2026
+```
+
+**Timestamp format breakdown:**
+- Positions 0-3: Year (YYYY)
+- Positions 4-5: Month (MM)
+- Positions 6-7: Day (DD)
+- Positions 8-9: Hour (HH)
+- Positions 10-11: Minute (MM)
+- Positions 12-13: Second (SS)
+
+**Usage example:**
+```python
+for idx, section in parser.find_sections("EV", include_part_index=True):
+    event_time = section.get_property("TU")
+    if event_time:
+        readable_time = format_datetime(event_time)
+        event_name = section.get_property("NA")
+        print(f"{event_name} starts at {readable_time}")
+        # Output: Manchester United vs Liverpool starts at 15/03/2026 17:30:00
+```
+
+---
+
+### split_list_by_delimiter()
+
+Splits a list into sublists based on a delimiter value.
+
+```python
+def split_list_by_delimiter(
+    items: List[Any],
+    delimiter: Any
+) -> List[List[Any]]
+```
+
+<ParamField path="items" type="List[Any]" required>
+  The list to split
+</ParamField>
+
+<ParamField path="delimiter" type="Any" required>
+  The value to split on (compared using equality)
+</ParamField>
+
+**Returns:** `List[List[Any]]` - List of sublists split by the delimiter (delimiter not included in results)
+
+**Example:**
+```python
+from bet365.utils import split_list_by_delimiter
+
+# Split a list of numbers
+numbers = [1, 2, 3, 0, 4, 5, 0, 6, 7]
+result = split_list_by_delimiter(numbers, 0)
+print(result)  # Output: [[1, 2, 3], [4, 5], [6, 7]]
+
+# Split a list of strings
+words = ["hello", "world", "STOP", "foo", "bar", "STOP", "baz"]
+result = split_list_by_delimiter(words, "STOP")
+print(result)  # Output: [['hello', 'world'], ['foo', 'bar'], ['baz']]
+
+# No delimiter present
+no_delim = [1, 2, 3]
+result = split_list_by_delimiter(no_delim, 0)
+print(result)  # Output: [[1, 2, 3]]
+
+# Empty list
+empty = split_list_by_delimiter([], 0)
+print(empty)  # Output: []
+```
+
+**Usage with Bet365Section:**
+```python
+from bet365.message_parser import Bet365MessageParser, Bet365Section
+from bet365.utils import split_list_by_delimiter
+
+# Parse sections from raw data
+sections = Bet365MessageParser.parse_sections_list([
+    "CL;NA=Sport1",
+    "MA;NA=Match1",
+    "F",  # Delimiter section
+    "CL;NA=Sport2",
+    "MA;NA=Match2",
+    "F",
+    "CL;NA=Sport3"
+])
+
+# Split by F (delimiter) sections
+delimiter = Bet365Section("F", {})
+groups = split_list_by_delimiter(sections, delimiter)
+
+for i, group in enumerate(groups):
+    print(f"\nGroup {i + 1}:")
+    for section in group:
+        print(f"  {section.type}: {section.get_property('NA')}")
+
+# Output:
+# Group 1:
+#   CL: Sport1
+#   MA: Match1
+# Group 2:
+#   CL: Sport2
+#   MA: Match2
+# Group 3:
+#   CL: Sport3
+```
+
+**Used internally by get_parsers():**
+
+The `get_parsers()` function uses this utility to split sections by "F" delimiters:
+
+```python
+from bet365.message_parser import get_parsers
+from bet365.utils import split_list_by_delimiter
+
+# Inside get_parsers():
+# sections = [...list of Bet365Section objects...]
+# for section in split_list_by_delimiter(sections, Bet365Section("F", {})):
+#     parsers.append(Bet365MessageParser([section]))
+```
+
+## Complete Example
+
+Here's how all three utilities work together:
+
+```python
+from bet365 import Bet365AndroidSession
+from bet365.message_parser import get_parsers
+from bet365.utils import parse_odds, format_datetime, split_list_by_delimiter
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+session.go_homepage()
+
+# Get match data
+response = session.protected_get(
+    f"https://{session.host}/splashcontentapi/getsplashpods",
+    params={"lid": "1", "pd": "#AS#B1#"},
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+# Parse response
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    # Find match groups
+    for idx, section in parser.find_sections("MG", include_part_index=True):
+        match_name = section.get_property("NA")
+        
+        # Format match time if available
+        match_time = section.get_property("TU")
+        if match_time:
+            formatted_time = format_datetime(match_time)
+            print(f"\n{match_name} - {formatted_time}")
+        else:
+            print(f"\n{match_name}")
+        
+        # Find participant odds
+        for odds_idx, odds_section in parser.find_sections("PA", include_part_index=True):
+            team = odds_section.get_property("FD")
+            fractional = odds_section.get_property("OD")
+            
+            if fractional:
+                decimal = parse_odds(fractional)
+                print(f"  {team}: {fractional} ({decimal:.2f})")
+
+# Example output:
+# Manchester United vs Liverpool - 15/03/2026 17:30:00
+#   Manchester United: 5/2 (3.50)
+#   Draw: 9/4 (3.25)
+#   Liverpool: 6/5 (2.20)
+```
+
+## Type Hints
+
+All functions include proper type hints:
+
+```python
+from typing import Union, List, Any
+
+def parse_odds(odds_string: str) -> Union[float, None]: ...
+def format_datetime(timestamp: str) -> str: ...
+def split_list_by_delimiter(items: List[Any], delimiter: Any) -> List[List[Any]]: ...
+```
+
+## Error Handling
+
+### parse_odds()
+- Returns `0.0` for empty strings
+- Returns `0.0` for division by zero
+- Assumes valid fraction format ("numerator/denominator")
+
+### format_datetime()
+- Returns empty string for empty input
+- Returns original string if less than 14 characters
+- Assumes valid timestamp format (YYYYMMDDHHMMSS)
+
+### split_list_by_delimiter()
+- Returns empty list for empty input
+- Returns single-item list containing all items if delimiter not found
+- Creates a copy of the input list (doesn't modify original)

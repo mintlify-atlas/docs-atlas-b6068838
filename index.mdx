@@ -1,97 +1,168 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Bet365 Scraper SDK"
+description: "Python SDK for request-based Bet365 web scraping with advanced anti-bot protection and TLS fingerprinting"
 ---
 
-## Setting up
+<div className="hero" style={{
+  background: 'linear-gradient(135deg, #1E1F4D 0%, #2c2f6a 100%)',
+  padding: '4rem 2rem',
+  borderRadius: '12px',
+  marginBottom: '3rem',
+  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)'
+}}>
+  <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+    <h1 style={{ 
+      fontSize: '3rem', 
+      fontWeight: '700', 
+      marginBottom: '1.5rem',
+      color: '#ffffff',
+      lineHeight: '1.2'
+    }}>
+      Bet365 Scraper SDK
+    </h1>
+    <p style={{ 
+      fontSize: '1.25rem', 
+      color: '#acb4fc',
+      marginBottom: '2rem',
+      lineHeight: '1.6'
+    }}>
+      Python SDK for request-based Bet365 web scraping with advanced anti-bot protection and TLS fingerprinting
+    </p>
+    <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+      <a href="/quickstart" style={{
+        background: '#5865f2',
+        color: '#ffffff',
+        padding: '0.75rem 2rem',
+        borderRadius: '6px',
+        textDecoration: 'none',
+        fontWeight: '600',
+        display: 'inline-block'
+      }}>
+        Get Started
+      </a>
+      <a href="https://github.com/enter-a-new-username3/bet365-scraper-demo" style={{
+        background: '#ffffff',
+        color: '#000000',
+        padding: '0.75rem 2rem',
+        borderRadius: '6px',
+        textDecoration: 'none',
+        fontWeight: '600',
+        display: 'inline-block'
+      }}>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</div>
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Anti-Bot Protection" icon="shield-check" href="/concepts/anti-bot-protection">
+    Bypass advanced anti-bot detection systems with sophisticated TLS fingerprinting
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Android API Integration" icon="mobile" href="/api/bet365-android-session">
+    Seamless integration with Bet365's Android app API for reliable data access
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Message Parsing" icon="code" href="/concepts/message-parsing">
+    Parse Bet365's proprietary message format to extract sports, matches, and odds data
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Proxy Support" icon="network-wired" href="/installation">
+    Built-in proxy support for distributed and resilient scraping operations
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Quick Start
 
-Everything you need to create world-class documentation.
+Get up and running in minutes with our simple installation process.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+<Steps>
+  <Step title="Install Dependencies">
+    Install the required Python packages using pip:
+    
+    ```bash
+    pip install curl_cffi tls_client prettytable
+    ```
+  </Step>
+  
+  <Step title="Configure Your Session">
+    Set up your API credentials and proxy configuration:
+    
+    ```python
+    from bet365 import Bet365AndroidSession
+    
+    session = Bet365AndroidSession(
+        api_url="your-api-url",
+        api_key="your-api-key",
+        proxy="http://proxy:port",  # optional
+        host="www.bet365.com"
+    )
+    ```
+  </Step>
+  
+  <Step title="Start Scraping">
+    Extract sports data and odds information:
+    
+    ```python
+    # Navigate to homepage
+    session.go_homepage()
+    
+    # Get available sports
+    sports = session.extract_available_sports()
+    
+    # Fetch specific sport data
+    soccer = next(filter(lambda m: m.name == "Soccer", sports))
+    session.get_sport_homepage(soccer)
+    ```
+  </Step>
+</Steps>
 
-## Need inspiration?
+## Use Cases
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={3}>
+  <Card title="Odds Monitoring" icon="chart-line">
+    Track odds changes in real-time for betting analysis
+  </Card>
+  <Card title="Surebet Detection" icon="scale-balanced">
+    Identify arbitrage opportunities across markets
+  </Card>
+  <Card title="Automated Betting" icon="robot">
+    Integrate with automated betting systems
+  </Card>
+</CardGroup>
+
+## Documentation
+
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn about the SDK's capabilities and architecture
+  </Card>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Follow our step-by-step guide to get started quickly
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/bet365-android-session">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Examples" icon="lightbulb" href="/examples/fetching-sports">
+    View practical examples and code snippets
+  </Card>
+</CardGroup>
+
+## Important Notice
+
+<Warning>
+This SDK is designed to help developers handle bot-detection challenges and maintain stable access when interacting with Bet365 under legitimate and authorized use cases. It provides a controlled environment for managing request patterns and mitigating false positives from automated protection systems.
+
+Please note that this SDK does not return pre-scraped data. Ensure you comply with Bet365's terms of service and applicable laws when using this SDK.
+</Warning>
+
+## Community and Support
+
+<CardGroup cols={2}>
+  <Card title="GitHub Repository" icon="github" href="https://github.com/enter-a-new-username3/bet365-scraper-demo">
+    View the source code and contribute to the project
+  </Card>
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/u56FypRKKc">
+    Join our Discord server for support and discussions
+  </Card>
+</CardGroup>

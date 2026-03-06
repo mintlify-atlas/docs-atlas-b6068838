@@ -1,0 +1,333 @@
+---
+title: 'Bet365AndroidSession'
+description: 'Main session class for making authenticated requests to Bet365 with anti-bot protection'
+---
+
+## Overview
+
+The `Bet365AndroidSession` class provides a high-level interface for interacting with Bet365's API endpoints. It handles TLS fingerprinting, cookie management, and anti-bot header generation automatically.
+
+## Constructor
+
+<ParamField path="api_url" type="str" required>
+  The URL of the X-Net header generation API
+</ParamField>
+
+<ParamField path="api_key" type="str" required>
+  API key for authenticating with the X-Net header generation service
+</ParamField>
+
+<ParamField path="host" type="str" default="www.bet365.com">
+  Bet365 host domain to connect to
+</ParamField>
+
+<ParamField path="proxy" type="Optional[str]" default="None">
+  HTTPS proxy URL to route requests through (format: `http://user:pass@host:port`)
+</ParamField>
+
+<ParamField path="verify" type="bool" default="True">
+  Whether to verify SSL certificates (internally set to False for compatibility)
+</ParamField>
+
+```python
+from bet365 import Bet365AndroidSession
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key",
+    host="www.bet365.com",
+    proxy="http://user:pass@proxy.example.com:8080"
+)
+```
+
+## Methods
+
+### go_homepage()
+
+Initializes the session by visiting the Bet365 homepage and extracting necessary configuration.
+
+```python
+def go_homepage()
+```
+
+**Returns:** `None`
+
+**Raises:**
+- `AssertionError`: If blocked by Cloudflare (403) or configuration fetch fails
+
+**Example:**
+```python
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+session.go_homepage()
+```
+
+<Expandable title="What this method does">
+  1. Fetches the Bet365 homepage with proper Android app headers
+  2. Extracts the site configuration URL from the homepage
+  3. Fetches the configuration to get the SST (session token)
+  4. Sets up device ID cookie (`usdi`)
+  5. Optionally starts ZAP connection for live data (if available)
+</Expandable>
+
+---
+
+### extract_available_sports()
+
+Retrieves the list of all available sports from Bet365.
+
+```python
+def extract_available_sports() -> list[Sport]
+```
+
+**Returns:** `list[Sport]` - List of Sport objects containing name and PD identifier
+
+**Example:**
+```python
+session.go_homepage()
+sports = session.extract_available_sports()
+
+for sport in sports:
+    print(f"{sport.name}: {sport.PD}")
+# Output:
+# Football: #AS#B1#C1#D8#E12345#
+# Basketball: #AS#B1#C1#D18#E67890#
+```
+
+---
+
+### get_sport_homepage()
+
+Fetches the homepage data for a specific sport including available matches and odds.
+
+```python
+def get_sport_homepage(sport: Sport)
+```
+
+<ParamField path="sport" type="Sport" required>
+  Sport object obtained from `extract_available_sports()`
+</ParamField>
+
+**Returns:** `None` (prints match tables to console and saves response to `response.txt`)
+
+**Example:**
+```python
+session.go_homepage()
+sports = session.extract_available_sports()
+
+# Get football homepage
+football = next(s for s in sports if s.name == "Soccer")
+session.get_sport_homepage(football)
+```
+
+---
+
+### protected_get()
+
+Makes an authenticated GET request with anti-bot protection headers.
+
+```python
+def protected_get(
+    url: str,
+    headers: Union[dict[str, str], None] = None,
+    *args,
+    **kwargs
+)
+```
+
+<ParamField path="url" type="str" required>
+  The URL to make the GET request to
+</ParamField>
+
+<ParamField path="headers" type="dict[str, str] | None" default="None">
+  Additional headers to include in the request
+</ParamField>
+
+<ParamField path="**kwargs" type="Any">
+  Additional arguments passed to curl_cffi's get() function (e.g., `params`, `timeout`)
+</ParamField>
+
+**Returns:** `Response` - curl_cffi Response object
+
+**Example:**
+```python
+response = session.protected_get(
+    "https://www.bet365.com/leftnavcontentapi/allsportsmenu",
+    params={
+        "lid": "30",
+        "zid": "0",
+        "pd": "#AL#B1#R^1#"
+    },
+    headers={
+        "User-Agent": "Mozilla (Linux; Android 12 Phone...) bet365/8.0.36.00",
+        "X-b365App-ID": "8.0.36.00-row"
+    }
+)
+print(response.status_code)
+print(response.text)
+```
+
+<Expandable title="How anti-bot protection works">
+  This method automatically:
+  1. Builds the Cookie header from the session's cookies
+  2. Generates the `X-Net-Sync-Term-Android` header using the configured API
+  3. Applies TLS fingerprinting to mimic the Android app
+  4. Routes the request through the configured proxy (if set)
+</Expandable>
+
+---
+
+### get_x_net_header()
+
+Generates the X-Net-Sync-Term-Android header required for anti-bot protection.
+
+```python
+def get_x_net_header(
+    url: str,
+    cookie_header: str,
+    post_data: bytes
+) -> str
+```
+
+<ParamField path="url" type="str" required>
+  The URL that will be requested
+</ParamField>
+
+<ParamField path="cookie_header" type="str" required>
+  Cookie header string
+</ParamField>
+
+<ParamField path="post_data" type="bytes" required>
+  POST data bytes (empty bytes `b""` for GET requests)
+</ParamField>
+
+**Returns:** `str` - The generated X-Net header value
+
+**Raises:**
+- `AssertionError`: If the API returns a non-200 status code
+
+**Example:**
+```python
+from bet365.sdk import build_cookies
+
+cookie_header = build_cookies(session.session.cookies)
+x_net_header = session.get_x_net_header(
+    "https://www.bet365.com/splashcontentapi/getsplashpods",
+    cookie_header,
+    b""
+)
+print(x_net_header)
+```
+
+## Properties
+
+### session
+
+**Type:** `curl_cffi.requests.Session`
+
+The underlying curl_cffi session object used for making HTTP requests.
+
+```python
+# Access cookies
+print(session.session.cookies)
+
+# Make custom requests
+response = session.session.get("https://example.com")
+```
+
+---
+
+### device_id
+
+**Type:** `str`
+
+Randomly generated device UUID used to identify the session.
+
+**Format:** `00000000-0000-0000-XXXX-XXXXXXXXXXXX`
+
+```python
+print(session.device_id)
+# Output: 00000000-0000-0000-A1B2-C3D4E5F6A7B8
+```
+
+---
+
+### zap_thread
+
+**Type:** `Bet365ZAPConnection | None`
+
+Live data connection thread (only available in full version, not demo).
+
+```python
+if session.zap_thread:
+    print("Live data connection active")
+```
+
+---
+
+### host
+
+**Type:** `str`
+
+The Bet365 host domain being used.
+
+---
+
+### api_url
+
+**Type:** `str`
+
+The URL of the X-Net header generation API.
+
+---
+
+### api_key
+
+**Type:** `str`
+
+API key for the X-Net header generation service.
+
+---
+
+### proxy
+
+**Type:** `Optional[str]`
+
+Configured proxy URL (if any).
+
+## Complete Example
+
+```python
+from bet365 import Bet365AndroidSession
+
+# Initialize session
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key",
+    proxy="http://user:pass@proxy.example.com:8080"
+)
+
+# Setup session by visiting homepage
+session.go_homepage()
+
+# Get available sports
+sports = session.extract_available_sports()
+print(f"Found {len(sports)} sports")
+
+# Get data for a specific sport
+football = next(s for s in sports if "Football" in s.name)
+session.get_sport_homepage(football)
+
+# Make custom authenticated requests
+response = session.protected_get(
+    f"https://{session.host}/some-api-endpoint",
+    params={"lid": "1"},
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+if response.status_code == 200:
+    print("Success!")
+    print(response.text)
+```

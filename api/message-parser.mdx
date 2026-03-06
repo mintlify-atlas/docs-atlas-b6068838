@@ -1,0 +1,311 @@
+---
+title: 'Bet365MessageParser'
+description: 'Parser for Bet365 proprietary message format data'
+---
+
+## Overview
+
+The `Bet365MessageParser` class provides functionality to parse and query Bet365's proprietary message format. This format is used in API responses and consists of sections separated by delimiters, with each section containing a type and key-value properties.
+
+## Class: Bet365MessageParser
+
+### Constructor
+
+```python
+Bet365MessageParser(sections: List[List[Bet365Section]])
+```
+
+<ParamField path="sections" type="List[List[Bet365Section]]" required>
+  A list of section groups, where each group is a list of Bet365Section objects
+</ParamField>
+
+**Example:**
+```python
+from bet365.message_parser import Bet365MessageParser, Bet365Section
+
+# Usually created via get_parsers(), not directly
+sections = [[
+    Bet365Section("CL", {"NA": "Soccer", "PD": "#AS#B1#"}),
+    Bet365Section("MA", {"FD": "Match Name"})
+]]
+
+parser = Bet365MessageParser(sections)
+```
+
+## Static Methods
+
+### parse_section_string()
+
+Parses a single section string into a `Bet365Section` object.
+
+```python
+@staticmethod
+def parse_section_string(section_string: str) -> Bet365Section
+```
+
+<ParamField path="section_string" type="str" required>
+  String in format `"TYPE;key1=value1;key2=value2"`
+</ParamField>
+
+**Returns:** `Bet365Section` - Parsed section object
+
+**Example:**
+```python
+from bet365.message_parser import Bet365MessageParser
+
+section = Bet365MessageParser.parse_section_string(
+    "CL;NA=Soccer;PD=#AS#B1#C1#D8#;ID=12345"
+)
+
+print(section.type)  # Output: CL
+print(section.get_property("NA"))  # Output: Soccer
+print(section.get_property("PD"))  # Output: #AS#B1#C1#D8#
+```
+
+---
+
+### parse_sections_list()
+
+Parses a list of section strings into `Bet365Section` objects.
+
+```python
+@staticmethod
+def parse_sections_list(sections_list: List[str]) -> List[Bet365Section]
+```
+
+<ParamField path="sections_list" type="List[str]" required>
+  List of section strings to parse
+</ParamField>
+
+**Returns:** `List[Bet365Section]` - List of parsed section objects
+
+**Example:**
+```python
+section_strings = [
+    "CL;NA=Soccer;PD=#AS#B1#",
+    "MA;FD=Team A vs Team B",
+    "PA;OD=3/1;ID=98765"
+]
+
+sections = Bet365MessageParser.parse_sections_list(section_strings)
+
+for section in sections:
+    print(f"{section.type}: {section.properties}")
+```
+
+## Instance Methods
+
+### find_sections()
+
+Finds sections matching specified criteria across all section groups.
+
+```python
+def find_sections(
+    node_type: str,
+    include_part_index: bool = False,
+    **filters
+) -> Iterator[Tuple[int, Bet365Section]]
+```
+
+<ParamField path="node_type" type="str" required>
+  The section type to search for (e.g., "CL", "MA", "PA", "MG")
+</ParamField>
+
+<ParamField path="include_part_index" type="bool" default="False">
+  If `True`, yields the section itself. If `False`, yields the entire section group.
+</ParamField>
+
+<ParamField path="**filters" type="Any">
+  Property filters to apply. Can be exact values or callable functions for custom matching.
+</ParamField>
+
+**Returns:** `Iterator[Tuple[int, Bet365Section]]` - Iterator of (index, section) tuples
+
+**Example:**
+```python
+# Find all CL sections with a specific name
+for idx, section in parser.find_sections("CL", NA="Soccer", include_part_index=True):
+    print(f"Found at index {idx}: {section.get_property('NA')}")
+
+# Find sections using a custom filter function
+def has_odds(key, value):
+    return value is not None and "/" in str(value)
+
+for idx, section in parser.find_sections("PA", OD=has_odds, include_part_index=True):
+    print(f"Odds: {section.get_property('OD')}")
+
+# Find sections with PV property starting with specific value
+for idx, section in parser.find_sections(
+    "CL",
+    PV=lambda k, v: v.startswith("podcontentcontentapi") if v else False,
+    include_part_index=True
+):
+    print(f"Found pod content section at {idx}")
+```
+
+<Expandable title="Understanding include_part_index">
+  - When `include_part_index=True`: Returns the matched section itself
+  - When `include_part_index=False`: Returns the entire section group containing the match
+  
+  Use `True` when you need the specific section, `False` when you need context around it.
+</Expandable>
+
+## Module Functions
+
+### get_parsers()
+
+Creates parser instances from raw Bet365 API response data.
+
+```python
+def get_parsers(data: str) -> List[Bet365MessageParser]
+```
+
+<ParamField path="data" type="str" required>
+  Raw response data from Bet365 API (uses `\b` and `|` as delimiters)
+</ParamField>
+
+**Returns:** `List[Bet365MessageParser]` - List of parser instances
+
+**Example:**
+```python
+from bet365.message_parser import get_parsers
+from bet365 import Bet365AndroidSession
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+
+session.go_homepage()
+response = session.protected_get(
+    f"https://{session.host}/leftnavcontentapi/allsportsmenu",
+    params={"lid": "30", "zid": "0"},
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+# Parse the response
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    # Find all sport sections
+    for idx, section in parser.find_sections("CL", include_part_index=True):
+        name = section.get_property("NA")
+        if name:
+            print(f"Sport: {name}")
+```
+
+---
+
+### read_table()
+
+Extracts table data from a parser starting at a specific index.
+
+```python
+def read_table(
+    parser: Bet365MessageParser,
+    idx: int,
+    extra_properties: list = []
+) -> Dict[str, Any]
+```
+
+<ParamField path="parser" type="Bet365MessageParser" required>
+  Parser instance containing the table data
+</ParamField>
+
+<ParamField path="idx" type="int" required>
+  Starting index of the table (usually points to an MG section)
+</ParamField>
+
+<ParamField path="extra_properties" type="list" default="[]">
+  Additional property keys to extract from sections
+</ParamField>
+
+**Returns:** `Dict[str, Any]` - Dictionary containing:
+- `title` (str): Table title
+- `data` (list): List of rows, each with `name`, `values`, and `extra` fields
+
+**Example:**
+```python
+from bet365.message_parser import get_parsers, read_table
+
+response = session.protected_get(...)
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    # Find match group sections
+    for idx, _ in parser.find_sections("MG", include_part_index=True):
+        table = read_table(parser, idx, extra_properties=["IT", "CT"])
+        
+        print(f"Table: {table['title']}")
+        for row in table['data']:
+            print(f"  {row['name']}: {row['values']}")
+            if row['extra']:
+                print(f"    Extra: {row['extra']}")
+```
+
+<Expandable title="Table structure">
+  Tables in Bet365's format typically consist of:
+  - An MG (Match Group) section as the header
+  - MA (Market) sections for row labels
+  - PA (Participant) sections containing odds and IDs
+  - CO (Comment) sections for additional context
+  
+  The `read_table()` function extracts this hierarchical structure into a flat dictionary format.
+</Expandable>
+
+## Complete Example
+
+```python
+from bet365 import Bet365AndroidSession
+from bet365.message_parser import get_parsers, read_table
+from bet365.utils import parse_odds
+
+# Initialize and setup session
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+session.go_homepage()
+
+# Get sports list
+response = session.protected_get(
+    f"https://{session.host}/leftnavcontentapi/allsportsmenu",
+    params={
+        "lid": "30",
+        "zid": "0",
+        "pd": "#AL#B1#R^1#",
+    },
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+# Parse response
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    # Find all classification sections
+    for idx, cl in parser.find_sections(
+        "CL",
+        include_part_index=True
+    ):
+        sport_name = cl.get_property("NA")
+        sport_pd = cl.get_property("PD")
+        
+        if sport_name and sport_pd:
+            print(f"\nSport: {sport_name}")
+            print(f"PD: {sport_pd}")
+            
+            # Check if it has an ID
+            if cl.has_property("ID"):
+                print(f"ID: {cl.get_property('ID')}")
+```
+
+## Section Types
+
+Common section types you'll encounter:
+
+- **CL** (Classification): Sport/category information
+- **MA** (Market): Betting market or match name
+- **PA** (Participant): Team/player with odds
+- **MG** (Match Group): Container for match tables
+- **CO** (Comment): Additional context or labels
+- **F** (Delimiter): Marks the end of a data block

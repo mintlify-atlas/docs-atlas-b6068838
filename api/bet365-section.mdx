@@ -1,0 +1,350 @@
+---
+title: 'Bet365Section'
+description: 'Represents a parsed section from Bet365 message format'
+---
+
+## Overview
+
+The `Bet365Section` class represents a single parsed section from Bet365's proprietary message format. Each section has a type (like "CL", "MA", "PA") and a dictionary of properties (key-value pairs).
+
+## Class Definition
+
+```python
+@dataclass
+class Bet365Section:
+    type: str
+    properties: dict[str, str]
+```
+
+## Constructor
+
+```python
+def __init__(section_type: str, properties: dict[str, str])
+```
+
+<ParamField path="section_type" type="str" required>
+  The section type identifier (e.g., "CL", "MA", "PA", "MG", "CO")
+</ParamField>
+
+<ParamField path="properties" type="dict[str, str]" required>
+  Dictionary of property key-value pairs
+</ParamField>
+
+**Example:**
+```python
+from bet365.message_parser import Bet365Section
+
+# Create a classification section
+section = Bet365Section(
+    section_type="CL",
+    properties={
+        "NA": "Soccer",
+        "PD": "#AS#B1#C1#D8#",
+        "ID": "12345"
+    }
+)
+
+print(section.type)  # Output: CL
+print(section.properties)  # Output: {'NA': 'Soccer', 'PD': '#AS#B1#C1#D8#', 'ID': '12345'}
+```
+
+## Properties
+
+### type
+
+**Type:** `str`
+
+The section type identifier.
+
+```python
+section = Bet365Section("MA", {"NA": "Match Winner"})
+print(section.type)  # Output: MA
+```
+
+---
+
+### properties
+
+**Type:** `dict[str, str]`
+
+Dictionary containing all key-value properties for this section.
+
+```python
+section = Bet365Section("PA", {
+    "FD": "Team A",
+    "OD": "3/1",
+    "ID": "98765"
+})
+
+print(section.properties)
+# Output: {'FD': 'Team A', 'OD': '3/1', 'ID': '98765'}
+```
+
+## Methods
+
+### get_property()
+
+Retrieves a property value with an optional default.
+
+```python
+def get_property(key: str, default: Any = None) -> str
+```
+
+<ParamField path="key" type="str" required>
+  The property key to retrieve
+</ParamField>
+
+<ParamField path="default" type="Any" default="None">
+  Default value to return if the key doesn't exist
+</ParamField>
+
+**Returns:** `str` - The property value or default (converted to string)
+
+**Example:**
+```python
+section = Bet365Section("PA", {
+    "FD": "Team A",
+    "OD": "3/1"
+})
+
+# Get existing property
+team_name = section.get_property("FD")
+print(team_name)  # Output: Team A
+
+# Get property with default
+participant_id = section.get_property("ID", "unknown")
+print(participant_id)  # Output: unknown
+
+# Get non-existent property without default
+missing = section.get_property("XX")
+print(missing)  # Output: None
+```
+
+---
+
+### has_property()
+
+Checks if a section has a specific property.
+
+```python
+def has_property(key: str) -> bool
+```
+
+<ParamField path="key" type="str" required>
+  The property key to check for
+</ParamField>
+
+**Returns:** `bool` - True if the property exists, False otherwise
+
+**Example:**
+```python
+section = Bet365Section("CL", {
+    "NA": "Soccer",
+    "PD": "#AS#B1#"
+})
+
+if section.has_property("NA"):
+    print(f"Sport name: {section.get_property('NA')}")
+    # Output: Sport name: Soccer
+
+if section.has_property("ID"):
+    print("Has ID")
+else:
+    print("No ID property")
+    # Output: No ID property
+```
+
+## Common Section Types
+
+Here are the most common section types you'll encounter:
+
+### CL (Classification)
+
+Represents a sport, category, or classification.
+
+**Common properties:**
+- `NA`: Name
+- `PD`: Page Data identifier
+- `ID`: Unique identifier
+
+```python
+section = Bet365Section("CL", {
+    "NA": "Basketball",
+    "PD": "#AS#B1#C1#D18#",
+    "ID": "18"
+})
+```
+
+### MA (Market)
+
+Represents a betting market or match.
+
+**Common properties:**
+- `NA`: Market name
+- `FD`: Full description
+- `IT`: Item type
+
+```python
+section = Bet365Section("MA", {
+    "NA": "Match Winner",
+    "FD": "Team A vs Team B"
+})
+```
+
+### PA (Participant)
+
+Represents a team, player, or betting option with odds.
+
+**Common properties:**
+- `FD`: Full description (team/player name)
+- `OD`: Odds (in fraction format)
+- `ID`: Unique identifier
+
+```python
+section = Bet365Section("PA", {
+    "FD": "Team A",
+    "OD": "5/2",
+    "ID": "123456789"
+})
+```
+
+### MG (Match Group)
+
+Container for a group of matches or betting options.
+
+**Common properties:**
+- `NA`: Group name
+
+```python
+section = Bet365Section("MG", {
+    "NA": "Premier League - Today"
+})
+```
+
+### CO (Comment)
+
+Additional context or commentary.
+
+**Common properties:**
+- `NA`: Comment text
+
+```python
+section = Bet365Section("CO", {
+    "NA": "Live In-Play"
+})
+```
+
+## Usage in Parsing
+
+Sections are typically created by `Bet365MessageParser` when parsing API responses:
+
+```python
+from bet365.message_parser import get_parsers
+from bet365 import Bet365AndroidSession
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+session.go_homepage()
+
+# Get data
+response = session.protected_get(
+    f"https://{session.host}/leftnavcontentapi/allsportsmenu",
+    params={"lid": "30"},
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+# Parse into sections
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    for idx, section in parser.find_sections("CL", include_part_index=True):
+        # section is a Bet365Section instance
+        print(f"Type: {section.type}")
+        print(f"Name: {section.get_property('NA')}")
+        
+        if section.has_property("PD"):
+            print(f"PD: {section.get_property('PD')}")
+```
+
+## Filtering Sections
+
+You can use sections with custom filter functions:
+
+```python
+# Find sections with odds
+for idx, section in parser.find_sections(
+    "PA",
+    include_part_index=True
+):
+    if section.has_property("OD"):
+        odds = section.get_property("OD")
+        team = section.get_property("FD")
+        print(f"{team}: {odds}")
+
+# Find sections using a custom filter
+def is_live_market(key, value):
+    return value is not None and "live" in value.lower()
+
+for idx, section in parser.find_sections(
+    "MA",
+    NA=is_live_market,
+    include_part_index=True
+):
+    print(f"Live market: {section.get_property('NA')}")
+```
+
+## Equality Comparison
+
+Sections can be compared for equality:
+
+```python
+section1 = Bet365Section("CL", {"NA": "Soccer"})
+section2 = Bet365Section("CL", {"NA": "Soccer"})
+section3 = Bet365Section("CL", {"NA": "Basketball"})
+
+print(section1 == section2)  # Output: True
+print(section1 == section3)  # Output: False
+```
+
+Two sections are equal if they have the same type and identical properties.
+
+## Complete Example
+
+```python
+from bet365 import Bet365AndroidSession
+from bet365.message_parser import get_parsers
+from bet365.utils import parse_odds
+
+session = Bet365AndroidSession(
+    api_url="https://api.example.com/generate",
+    api_key="your-api-key"
+)
+session.go_homepage()
+
+# Get sports data
+response = session.protected_get(
+    f"https://{session.host}/leftnavcontentapi/allsportsmenu",
+    params={"lid": "30", "zid": "0"},
+    headers={"X-b365App-ID": "8.0.36.00-row"}
+)
+
+# Parse and process sections
+parsers = get_parsers(response.text)
+
+for parser in parsers:
+    # Find all sport sections
+    for idx, section in parser.find_sections("CL", include_part_index=True):
+        # Check if it has required properties
+        if section.has_property("NA") and section.has_property("PD"):
+            name = section.get_property("NA")
+            pd = section.get_property("PD")
+            
+            print(f"\nSport: {name}")
+            print(f"PD: {pd}")
+            
+            # Get optional properties with defaults
+            sport_id = section.get_property("ID", "N/A")
+            print(f"ID: {sport_id}")
+```
