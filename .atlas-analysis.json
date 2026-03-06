@@ -1,0 +1,91 @@
+{
+  "projectType": "sdk-library",
+  "projectName": "Bet365 Scraper SDK",
+  "projectDescription": "Python SDK for request-based Bet365 web scraping with advanced anti-bot protection and TLS fingerprinting",
+  "theme": "aspen",
+  "primaryColor": "#5c64f4",
+  "lightColor": "#acb4fc",
+  "darkColor": "#ffffff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/anti-bot-protection",
+              "concepts/tls-fingerprinting",
+              "concepts/message-parsing"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/fetching-sports",
+              "examples/parsing-responses",
+              "examples/error-handling"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Classes",
+            "pages": [
+              "api/bet365-android-session",
+              "api/sport"
+            ]
+          },
+          {
+            "group": "Message Parsing",
+            "pages": [
+              "api/message-parser",
+              "api/bet365-section"
+            ]
+          },
+          {
+            "group": "Utilities",
+            "pages": [
+              "api/utils"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Android app API integration with TLS fingerprinting",
+    "Bypass anti-bot detection systems",
+    "Parse Bet365 proprietary message format",
+    "Extract sports, matches, and odds data",
+    "Custom header generation (X-Net-Sync-Term-Android)",
+    "Proxy support for requests"
+  ],
+  "publicApiSurface": [
+    "Bet365AndroidSession",
+    "Bet365AndroidSession.go_homepage()",
+    "Bet365AndroidSession.extract_available_sports()",
+    "Bet365AndroidSession.get_sport_homepage(sport)",
+    "Bet365AndroidSession.protected_get(url, headers, **kwargs)",
+    "Sport",
+    "Bet365MessageParser",
+    "Bet365MessageParser.parse_section_string(section_string)",
+    "Bet365MessageParser.find_sections(node_type, **filters)",
+    "Bet365Section",
+    "Bet365Section.get_property(key, default)",
+    "parse_odds(odds_string)",
+    "format_datetime(timestamp)",
+    "split_list_by_delimiter(items, delimiter)"
+  ]
+}
